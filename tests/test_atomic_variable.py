@@ -101,6 +101,18 @@ class ExplodingEqualityText(str):
     __hash__ = str.__hash__
 
 
+class ExplodingTruth:
+    def __bool__(self) -> bool:
+        raise RuntimeError("authorization: Bearer truth-secret")
+
+
+class NonBooleanEqualityText(str):
+    def __eq__(self, other: object) -> object:
+        return ExplodingTruth()
+
+    __hash__ = str.__hash__
+
+
 def _reference(
     role: NodeControlGraphReferenceRole,
     value: str,
@@ -347,6 +359,32 @@ class AtomicControlPlaneVariableTests(unittest.TestCase):
                 self.assertEqual(result.request_id, request.request_id)
                 self.assertIs(result.operation, NodeControlOperation.READ_STATE)
                 self._assert_round_trip(descriptor, result)
+
+    def test_variable_reference_equality_failure_is_translated_without_context(self) -> None:
+        atomic_type = self._atomic_type()
+        descriptor = _descriptor()
+        variable = atomic_type(descriptor, ScalarControlState("target-a"))
+        hostile_name = NonBooleanEqualityText("routing")
+        read = _read_request(variable=hostile_name, request_id="hostile-read")
+        apply = _apply_request(
+            ScalarControlState("target-b"),
+            expected_version=0,
+            variable=hostile_name,
+            request_id="hostile-apply",
+        )
+
+        read_result = variable.read(ControlPlaneInvocationContext(read))
+        self.assertIsInstance(read_result, NodeControlFailed)
+        self.assertIs(read_result.operation, NodeControlOperation.READ_STATE)
+        self.assertNotIn("truth-secret", repr(read_result))
+
+        apply_result = variable.apply(apply, ControlPlaneInvocationContext(apply))
+        self.assertIsInstance(apply_result, NodeControlRejected)
+        self.assertIs(
+            apply_result.evidence.code,
+            NodeControlEvidenceCode.INVALID_COMMAND,
+        )
+        self.assertNotIn("truth-secret", repr(apply_result))
 
     def test_apply_rejects_request_source_and_dispatch_mismatches_before_state(self) -> None:
         atomic_type = self._atomic_type()
