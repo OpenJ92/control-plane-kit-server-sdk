@@ -10,8 +10,10 @@ if control_plane_kit_server_sdk.__version__ != "0.1.0":
     raise SystemExit("unexpected installed SDK version")
 if control_plane_kit_server_sdk.__all__ != [
     "AtomicControlPlaneVariable",
+    "AtomicWorkloadNodeControlVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
+    "WorkloadNodeControlVerifierKeySet",
     "__version__",
 ]:
     raise SystemExit("unexpected installed SDK exports")
@@ -20,6 +22,11 @@ if (
     != "control_plane_kit_server_sdk.atomic"
 ):
     raise SystemExit("unexpected installed SDK atomic variable owner")
+if (
+    control_plane_kit_server_sdk.AtomicWorkloadNodeControlVerifierKeySet.__module__
+    != "control_plane_kit_server_sdk.verifier_keys"
+):
+    raise SystemExit("unexpected installed SDK atomic verifier key-set owner")
 if (
     control_plane_kit_server_sdk.ControlPlaneInvocationContext.__module__
     != "control_plane_kit_server_sdk.context"
@@ -30,6 +37,11 @@ if (
     != "control_plane_kit_server_sdk.protocol"
 ):
     raise SystemExit("unexpected installed SDK protocol owner")
+if (
+    control_plane_kit_server_sdk.WorkloadNodeControlVerifierKeySet.__module__
+    != "control_plane_kit_server_sdk.verifier_keys"
+):
+    raise SystemExit("unexpected installed SDK verifier key-set owner")
 
 type_marker = resources.files("control_plane_kit_server_sdk").joinpath("py.typed")
 if not type_marker.is_file() or type_marker.read_bytes() != b"":

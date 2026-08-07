@@ -67,6 +67,29 @@ the max-safe version fails without publication. It is process-local: state and
 version do not survive restart. Issue #1150 owns replay, cache, ledger, and
 idempotency-key interpretation.
 
+`WorkloadNodeControlVerifierKeySet` carries one bounded, deterministic snapshot
+of exact core public verification material for workload-node-control grants.
+`AtomicWorkloadNodeControlVerifierKeySet` publishes a whole supplied snapshot
+for process-local readers:
+
+```python
+from control_plane_kit_server_sdk import (
+    AtomicWorkloadNodeControlVerifierKeySet,
+    WorkloadNodeControlVerifierKeySet,
+)
+
+key_set = WorkloadNodeControlVerifierKeySet(purpose, public_keys)
+verifier_keys = AtomicWorkloadNodeControlVerifierKeySet(key_set)
+assert verifier_keys.snapshot() is key_set
+```
+
+Public PEM is non-secret but integrity-sensitive and is omitted from routine
+representations. The key set does not prove producer provenance, graph
+admission, lifecycle status, or authority. Trusted composition must supply a
+complete snapshot after every process restart. Expected issuer and audience
+belong to the held signed-verifier predecessor; #1150 owns authenticated route
+accrual, replay, cache, ledger, and idempotency-key interpretation.
+
 ## Validation
 
 Run the authoritative Docker-first package gate with:
