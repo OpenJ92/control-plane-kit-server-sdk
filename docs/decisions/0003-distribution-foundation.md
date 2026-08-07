@@ -16,9 +16,11 @@ The dependency uses the GitHub archive and `control-plane-kit-core`
 subdirectory so a clean Python image does not need a git client. The full Git
 SHA identifies source; it is not a signed wheel or package-publication proof.
 
-The package root exports only `__version__`. It performs no eager core import
-and loads no framework, operations, database, provider, product, cryptography,
-or server-process package.
+At foundation acceptance, the package root exported only `__version__` and
+performed no eager core import. Decision 0005 supersedes that temporary root
+surface with the first typed SDK value. The package still loads no framework,
+operations, database, provider, product, cryptography, or server-process
+package.
 
 ## Deferred Ownership
 
@@ -36,6 +38,6 @@ commands only and does not create a temporary gate.
 ## Consequences
 
 Later SDK behavior has one stable distribution/import identity and one-way core
-dependency. Root behavior remains intentionally empty until its owning child
-adds and tests a public API. A `py.typed` marker is deferred until typed public
-contracts exist.
+dependency. Root behavior remained intentionally empty until its owning child
+added and tested a public API. A `py.typed` marker remains deferred to its named
+owner.

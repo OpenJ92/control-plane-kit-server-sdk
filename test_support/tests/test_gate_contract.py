@@ -120,16 +120,20 @@ class PackageGateContractTests(unittest.TestCase):
 
         self.assertEqual(source.count("sh -ceu '"), 2)
 
-    def test_installed_import_remains_version_only_and_behavior_free(self) -> None:
+    def test_installed_import_proves_context_and_forbidden_dependencies(self) -> None:
         gate = self._read("test.sh")
         source = self._read("test_support/installed_import.py")
 
         self.assertEqual(gate.count("python /test-support/installed_import.py"), 2)
         for expected in (
             "control_plane_kit_server_sdk.__version__",
+            "ControlPlaneInvocationContext",
+            "unexpected installed SDK context owner",
             "control_plane_kit_core",
+            "control_plane_kit_operations",
             "fastapi",
-            "unexpected eager import",
+            "unexpected forbidden import",
+            "installed context did not load the pinned core contract",
             "control-plane-kit-server-sdk import ok",
         ):
             with self.subTest(expected=expected):
