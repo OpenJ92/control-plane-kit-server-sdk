@@ -16,6 +16,13 @@ closed on hidden or placeholder tests, pytest, swallowed exceptions, mutable
 legacy imports, stale or unapproved skips, and proof-changing gate options.
 The approved-skip manifest starts empty.
 
+Before package build or any dependency-resolving pip invocation, a standard-
+library TOML preflight requires `project.dependencies` to equal the accepted
+one-element core coordinate: exact repository, full accepted commit SHA, and
+`control-plane-kit-core` archive subdirectory. Both dependency modes retain
+this metadata invariant. Rejection is bounded and does not echo the candidate
+coordinate.
+
 The Dockerfile has package and test stages. The package stage installs the SDK
 without dependencies; the gate then interprets the selected dependency mode,
 compiles source and tests, runs every discoverable package test, and imports the

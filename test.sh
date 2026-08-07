@@ -39,6 +39,14 @@ docker run --rm \
     --test-root tests \
     --gate-file test.sh
 
+echo "phase=dependency-preflight"
+docker run --rm \
+  -v "$ROOT:/source:ro" \
+  -v "$ROOT/test_support:/test-support:ro" \
+  -e PYTHONDONTWRITEBYTECODE=1 \
+  "$POLICY_IMAGE" \
+  python /test-support/dependency_preflight.py /source/pyproject.toml
+
 case "$DEPENDENCY_MODE" in
   pinned)
     if [[ -n "$CORE_REPO" ]]; then
@@ -46,7 +54,6 @@ case "$DEPENDENCY_MODE" in
       exit 2
     fi
     echo "dependency-mode=pinned"
-    grep 'https://github.com/OpenJ92/.*/archive/' pyproject.toml
     ;;
   local-core)
     if [[ -z "$CORE_REPO" || ! -d "$CORE_REPO/control-plane-kit-core" ]]; then

@@ -38,10 +38,12 @@ Run the authoritative Docker-first package gate with:
 ./test.sh
 ```
 
-The default gate is pinned package evidence. It installs the immutable core
-coordinate declared in `pyproject.toml`, checks package integrity, compiles the
-current source and tests, runs every discoverable standard-library unittest,
-and imports the installed SDK from outside the source tree.
+The default gate is pinned package evidence. Before package build or dependency
+resolution, a structured TOML preflight requires `project.dependencies` to be
+the exact one-element immutable core coordinate declared in `pyproject.toml`.
+The gate then checks package integrity, compiles the current source and tests,
+runs every discoverable standard-library unittest, and imports the installed
+SDK from outside the source tree.
 
 Coordinated source development may explicitly replace only the core dependency:
 
@@ -52,7 +54,8 @@ CPK_CORE_REPO=/absolute/path/to/control-plane-kit \
 ```
 
 Local-core mode is composition evidence; it is not the default package or CI proof.
-Merely having a sibling checkout does not change what is tested.
+It retains the same metadata preflight before substituting the explicit read-only
+checkout. Merely having a sibling checkout does not change what is tested.
 
 The repository does not own control-plane operations stores, cpk-server,
 Docker interpreters, server products, provider clients, or application state.
