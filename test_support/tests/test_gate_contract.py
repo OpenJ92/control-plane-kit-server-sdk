@@ -45,6 +45,20 @@ class PackageGateContractTests(unittest.TestCase):
         )
         self.assertNotIn("../control-plane-kit", source)
 
+    def test_structured_dependency_preflight_precedes_build_and_pip(self) -> None:
+        source = self._read("test.sh")
+
+        self.assertIn("phase=dependency-preflight", source)
+        self.assertIn("dependency_preflight.py", source)
+        preflight = source.index("phase=dependency-preflight")
+        structured_check = source.index("dependency_preflight.py")
+        package_build = source.index("phase=package-build")
+        dependency_pip = source.index("python -m pip install")
+        self.assertLess(preflight, structured_check)
+        self.assertLess(structured_check, package_build)
+        self.assertLess(package_build, dependency_pip)
+        self.assertNotIn("grep 'https://github.com/OpenJ92/.*/archive/'", source)
+
     def test_gate_orders_integrity_build_test_import_and_exact_cleanup(self) -> None:
         source = self._read("test.sh")
 
