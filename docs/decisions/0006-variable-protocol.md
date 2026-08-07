@@ -43,9 +43,9 @@ It owns its own state, revision, ledger, transaction, idempotency, and replay
 semantics and conforms without SDK inheritance. The SDK protocol owns no
 holder, storage, lock, registry, UnitOfWork, ledger, or persistence behavior.
 
-Issue #1481 may implement the process-local atomic variable against this same
-protocol. It must preserve the exact request identity law and must state that
-its state and replay guarantees do not survive process restart.
+Issue #1481 implements the process-local atomic variable against this same
+protocol. It preserves the exact request identity law. Its state and version
+do not survive process restart; it owns no replay guarantee.
 
 ## Security And Operations
 

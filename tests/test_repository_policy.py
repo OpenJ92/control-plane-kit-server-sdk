@@ -24,6 +24,17 @@ class RepositoryPolicyTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, policy)
 
+    def test_agent_guide_uses_accepted_protocol_and_replay_ownership_vocabulary(self) -> None:
+        policy = self._read("AGENTS.md")
+
+        self.assertIn(
+            "ControlPlaneVariable[ReadResult, Command, TransitionResult]",
+            policy,
+        )
+        self.assertIn("Issue #1150 owns replay", policy)
+        self.assertNotIn("ControlPlaneVariable[State, Command, Result]", policy)
+        self.assertIn("historical genesis metadata", policy)
+
     def test_agent_guide_records_issue_test_review_and_security_laws(self) -> None:
         policy = self._read("AGENTS.md")
 

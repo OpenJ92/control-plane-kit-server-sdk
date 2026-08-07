@@ -65,10 +65,12 @@ import control_plane_kit_server_sdk as sdk
 
 assert sdk.__version__ == "0.1.0"
 assert sdk.__all__ == [
+    "AtomicControlPlaneVariable",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
     "__version__",
 ]
+assert sdk.AtomicControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.atomic"
 assert sdk.ControlPlaneInvocationContext.__module__ == "control_plane_kit_server_sdk.context"
 assert sdk.ControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.protocol"
 assert "control_plane_kit_core" in sys.modules
