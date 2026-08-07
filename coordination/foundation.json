@@ -1,0 +1,16 @@
+{
+  "schema": "cpk.server-sdk.foundation.v1",
+  "repository": "OpenJ92/control-plane-kit-server-sdk",
+  "distribution": "control-plane-kit-server-sdk",
+  "import_package": "control_plane_kit_server_sdk",
+  "status": "repository-foundation-only",
+  "source_contract": {
+    "repository": "OpenJ92/control-plane-kit",
+    "accepted_develop_commit": "3d85dc76300bf88be923531445ce83e9b6c7b23e"
+  },
+  "coordination": {
+    "parent_issue": "https://github.com/OpenJ92/control-plane-kit/issues/1149",
+    "genesis_issue": "https://github.com/OpenJ92/control-plane-kit/issues/1478",
+    "next_issue": "https://github.com/OpenJ92/control-plane-kit/issues/1479"
+  }
+}
