@@ -48,7 +48,7 @@ class PackageFoundationTests(unittest.TestCase):
             },
         )
 
-    def test_root_import_exports_only_version_without_eager_dependencies(self) -> None:
+    def test_root_import_exports_context_without_outer_dependencies(self) -> None:
         self.assertTrue(
             (PACKAGE_ROOT / "__init__.py").is_file(),
             "missing import package: control_plane_kit_server_sdk",
@@ -58,11 +58,13 @@ import sys
 import control_plane_kit_server_sdk as sdk
 
 assert sdk.__version__ == "0.1.0"
-assert sdk.__all__ == ["__version__"]
+assert sdk.__all__ == ["ControlPlaneInvocationContext", "__version__"]
+assert sdk.ControlPlaneInvocationContext.__module__ == "control_plane_kit_server_sdk.context"
+assert "control_plane_kit_core" in sys.modules
 for name in (
-    "control_plane_kit_core",
     "control_plane_kit_operations",
     "control_plane_kit_interpreters",
+    "control_plane_kit_secrets",
     "control_plane_kit_servers",
     "fastapi",
     "psycopg",
@@ -91,7 +93,9 @@ for name in (
             "cloudflare",
             "control_plane_kit_operations",
             "control_plane_kit_interpreters",
+            "control_plane_kit_secrets",
             "control_plane_kit_servers",
+            "cryptography",
             "docker",
             "fastapi",
             "jwt",

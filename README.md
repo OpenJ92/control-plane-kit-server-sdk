@@ -19,16 +19,22 @@ It is not published to a package index. The base dependency is the immutable
 `3d85dc76300bf88be923531445ce83e9b6c7b23e`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
-The current root import is deliberately lightweight:
+The root import exposes one neutral invocation value:
 
 ```python
-import control_plane_kit_server_sdk
+from control_plane_kit_server_sdk import ControlPlaneInvocationContext, __version__
 
-assert control_plane_kit_server_sdk.__version__ == "0.1.0"
+context = ControlPlaneInvocationContext(request)
+assert context.request is request
+assert __version__ == "0.1.0"
 ```
 
-Protocol, state, verification, replay, route, and framework behavior remain
-assigned to their named later issues.
+`ControlPlaneInvocationContext` retains the exact core request supplied by an
+outer adapter. It does not authenticate the request. It does not prove graph membership.
+It does not prove admission or provenance. The value is frozen and slotted, and
+its request is excluded from its representation. Protocol interpretation,
+state, verification, replay, route, and framework behavior remain assigned to
+their named later issues.
 
 ## Validation
 
