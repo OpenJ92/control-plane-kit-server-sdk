@@ -202,6 +202,50 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
                         (mutated,),
                     )
 
+    def test_exact_core_shape_and_canonical_identity_are_required(self) -> None:
+        key_set_type, _ = self._types()
+        cases: list[tuple[str, DelegationPublicKey]] = []
+
+        extra_field = _key("key-extra")
+        object.__setattr__(extra_field, "unexpected_material", SensitiveCandidate())
+        cases.append(("extra-field", extra_field))
+
+        missing_field = _key("key-missing")
+        object.__delattr__(missing_field, "fingerprint_sha256")
+        cases.append(("missing-field", missing_field))
+
+        malformed_id = _key("key-id")
+        object.__setattr__(malformed_id, "key_id", "NOT-CANONICAL")
+        cases.append(("malformed-id", malformed_id))
+
+        forged_fingerprint = _key("key-fingerprint")
+        object.__setattr__(forged_fingerprint, "fingerprint_sha256", "0" * 64)
+        cases.append(("forged-fingerprint", forged_fingerprint))
+
+        noncanonical_pem = _key("key-pem")
+        object.__setattr__(
+            noncanonical_pem,
+            "public_key_pem",
+            noncanonical_pem.public_key_pem.rstrip("\n"),
+        )
+        cases.append(("noncanonical-pem", noncanonical_pem))
+
+        for identity, candidate in cases:
+            with self.subTest(identity=identity):
+                with self.assertRaises(TypeError) as raised:
+                    key_set_type(
+                        DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+                        (candidate,),
+                    )
+                self.assertEqual(
+                    str(raised.exception),
+                    "workload verifier public key must be an admitted exact "
+                    "DelegationPublicKey",
+                )
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertIsNone(raised.exception.__context__)
+                self.assertNotIn("candidate-secret", str(raised.exception))
+
     def test_value_shape_and_representations_exclude_public_material(self) -> None:
         key_set_type, holder_type = self._types()
         key = _key("key-sensitive", "pem-sensitive")
@@ -251,6 +295,12 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
         )
         for candidate in (SensitiveCandidate(), ExplodingReprCandidate(), subclass):
             with self.subTest(candidate=type(candidate).__name__):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    "atomic workload verifier key set must be "
+                    "WorkloadNodeControlVerifierKeySet",
+                ):
+                    holder_type(candidate)
                 with self.assertRaises(TypeError) as raised:
                     holder.replace(candidate)
                 self.assertEqual(
