@@ -444,6 +444,30 @@ class VariableProtocolTests(unittest.TestCase):
         self.assertTrue(marker.is_file(), "missing package-local py.typed marker")
         self.assertEqual(marker.read_bytes(), b"")
 
+    def test_atomic_decision_states_process_local_and_replay_boundaries(self) -> None:
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        decision_path = (
+            REPOSITORY_ROOT
+            / "docs"
+            / "decisions"
+            / "0007-atomic-control-plane-variable.md"
+        )
+        self.assertTrue(decision_path.is_file(), "missing atomic-variable decision")
+        decision = decision_path.read_text(encoding="utf-8")
+
+        for text in (
+            "AtomicControlPlaneVariable",
+            "process-local",
+            "command is context.request",
+            "compare outside the lock",
+            "Issue #1150 owns replay",
+            "max-safe version",
+        ):
+            with self.subTest(document="README", text=text):
+                self.assertIn(text, readme)
+            with self.subTest(document="decision", text=text):
+                self.assertIn(text, decision)
+
     def test_readme_and_decision_state_protocol_proof_boundaries(self) -> None:
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
         decision_path = REPOSITORY_ROOT / "docs" / "decisions" / "0006-variable-protocol.md"

@@ -9,11 +9,17 @@ import control_plane_kit_server_sdk
 if control_plane_kit_server_sdk.__version__ != "0.1.0":
     raise SystemExit("unexpected installed SDK version")
 if control_plane_kit_server_sdk.__all__ != [
+    "AtomicControlPlaneVariable",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
     "__version__",
 ]:
     raise SystemExit("unexpected installed SDK exports")
+if (
+    control_plane_kit_server_sdk.AtomicControlPlaneVariable.__module__
+    != "control_plane_kit_server_sdk.atomic"
+):
+    raise SystemExit("unexpected installed SDK atomic variable owner")
 if (
     control_plane_kit_server_sdk.ControlPlaneInvocationContext.__module__
     != "control_plane_kit_server_sdk.context"
