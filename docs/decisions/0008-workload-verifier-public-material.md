@@ -7,8 +7,10 @@ Status: Accepted for process-local supplied verifier configuration.
 `WorkloadNodeControlVerifierKeySet` is one immutable, slotted value containing
 the exact workload-node-control key purpose and one to sixteen exact core
 `DelegationPublicKey` values. It orders keys by exact key id while preserving
-the key objects by identity. Key ids and fingerprints are independently unique.
-The public-key tuple is excluded from routine representation.
+the key objects by identity. Before ordering, it rejects unexpected instance
+fields and reconstructs each core value to prove canonical key id, normalized
+PEM, and fingerprint congruence. Key ids and fingerprints are independently
+unique. The public-key tuple is excluded from routine representation.
 
 `AtomicWorkloadNodeControlVerifierKeySet` holds one complete key-set reference.
 Construction and replacement accept only the exact key-set type. Replacement

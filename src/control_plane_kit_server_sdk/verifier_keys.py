@@ -13,6 +13,12 @@ from control_plane_kit_core import (
 
 
 _MAX_PUBLIC_KEYS = 16
+_PUBLIC_KEY_FIELD_NAMES = (
+    "algorithm",
+    "fingerprint_sha256",
+    "key_id",
+    "public_key_pem",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +47,11 @@ class WorkloadNodeControlVerifierKeySet:
             raise TypeError(
                 "workload verifier keys must be exact DelegationPublicKey values"
             )
+        if any(not _has_exact_public_key_shape(key) for key in self.public_keys):
+            raise TypeError(
+                "workload verifier public key must be an admitted exact "
+                "DelegationPublicKey"
+            )
         if any(
             type(key.key_id) is not str
             or type(key.algorithm) is not DelegationKeyAlgorithm
@@ -51,6 +62,11 @@ class WorkloadNodeControlVerifierKeySet:
             raise TypeError(
                 "workload verifier public key fields must use exact core types"
             )
+        if any(not _is_canonical_public_key(key) for key in self.public_keys):
+            raise TypeError(
+                "workload verifier public key must be an admitted exact "
+                "DelegationPublicKey"
+            )
 
         ordered = tuple(sorted(self.public_keys, key=lambda key: key.key_id))
         if len({key.key_id for key in ordered}) != len(ordered):
@@ -58,6 +74,34 @@ class WorkloadNodeControlVerifierKeySet:
         if len({key.fingerprint_sha256 for key in ordered}) != len(ordered):
             raise ValueError("workload verifier key fingerprints must be unique")
         object.__setattr__(self, "public_keys", ordered)
+
+
+def _has_exact_public_key_shape(key: DelegationPublicKey) -> bool:
+    namespace = key.__dict__
+    if type(namespace) is not dict:
+        return False
+    field_names = tuple(namespace)
+    return (
+        all(type(field_name) is str for field_name in field_names)
+        and tuple(sorted(field_names)) == _PUBLIC_KEY_FIELD_NAMES
+    )
+
+
+def _is_canonical_public_key(key: DelegationPublicKey) -> bool:
+    try:
+        canonical = DelegationPublicKey(
+            key_id=key.key_id,
+            algorithm=key.algorithm,
+            public_key_pem=key.public_key_pem,
+        )
+    except (TypeError, ValueError):
+        return False
+    return (
+        canonical.key_id == key.key_id
+        and canonical.algorithm is key.algorithm
+        and canonical.public_key_pem == key.public_key_pem
+        and canonical.fingerprint_sha256 == key.fingerprint_sha256
+    )
 
 
 class AtomicWorkloadNodeControlVerifierKeySet:
