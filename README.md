@@ -30,6 +30,33 @@ assert control_plane_kit_server_sdk.__version__ == "0.1.0"
 Protocol, state, verification, replay, route, and framework behavior remain
 assigned to their named later issues.
 
+## Validation
+
+Run the authoritative Docker-first package gate with:
+
+```bash
+./test.sh
+```
+
+The default gate is pinned package evidence. Before package build or dependency
+resolution, a structured TOML preflight requires `project.dependencies` to be
+the exact one-element immutable core coordinate declared in `pyproject.toml`.
+The gate then checks package integrity, compiles the current source and tests,
+runs every discoverable standard-library unittest, and imports the installed
+SDK from outside the source tree.
+
+Coordinated source development may explicitly replace only the core dependency:
+
+```bash
+CPK_SERVER_SDK_DEPENDENCY_MODE=local-core \
+CPK_CORE_REPO=/absolute/path/to/control-plane-kit \
+./test.sh
+```
+
+Local-core mode is composition evidence; it is not the default package or CI proof.
+It retains the same metadata preflight before substituting the explicit read-only
+checkout. Merely having a sibling checkout does not change what is tested.
+
 The repository does not own control-plane operations stores, cpk-server,
 Docker interpreters, server products, provider clients, or application state.
 FastAPI support is a later optional adapter rather than a base dependency.
