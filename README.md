@@ -36,6 +36,19 @@ its request is excluded from its representation. Protocol interpretation,
 state, verification, replay, route, and framework behavior remain assigned to
 their named later issues.
 
+`ControlPlaneVariable` is the one structural extension for process-local and
+durable workload-owned variables. It declares `descriptor`, `read`, and `apply`
+over the existing core descriptor, command, and disjoint result variants. An
+apply implementation must check `command is context.request` before domain
+work; a mismatch returns context-keyed closed invalid-command evidence without
+rendering the candidate.
+
+The runtime-checkable protocol proves member presence only. Static checkers own
+signature and variance analysis, and exact core codecs execute returned-result
+compatibility. The installed package includes an explicit empty `py.typed`
+marker for its inline annotations. The durable conformance example remains a
+test-owned service and UnitOfWork; the SDK owns no storage or transaction.
+
 ## Validation
 
 Run the authoritative Docker-first package gate with:

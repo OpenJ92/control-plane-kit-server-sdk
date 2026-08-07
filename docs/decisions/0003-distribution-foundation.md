@@ -39,5 +39,5 @@ commands only and does not create a temporary gate.
 
 Later SDK behavior has one stable distribution/import identity and one-way core
 dependency. Root behavior remained intentionally empty until its owning child
-added and tested a public API. A `py.typed` marker remains deferred to its named
-owner.
+added and tested a public API. Decision 0006 supersedes the marker deferral by
+explicitly packaging `py.typed` with the first structural protocol.
