@@ -66,13 +66,17 @@ import control_plane_kit_server_sdk as sdk
 assert sdk.__version__ == "0.1.0"
 assert sdk.__all__ == [
     "AtomicControlPlaneVariable",
+    "AtomicWorkloadNodeControlVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
+    "WorkloadNodeControlVerifierKeySet",
     "__version__",
 ]
 assert sdk.AtomicControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.atomic"
+assert sdk.AtomicWorkloadNodeControlVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert sdk.ControlPlaneInvocationContext.__module__ == "control_plane_kit_server_sdk.context"
 assert sdk.ControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.protocol"
+assert sdk.WorkloadNodeControlVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert "control_plane_kit_core" in sys.modules
 for name in (
     "control_plane_kit_operations",
