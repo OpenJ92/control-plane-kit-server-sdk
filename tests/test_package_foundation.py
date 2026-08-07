@@ -47,6 +47,12 @@ class PackageFoundationTests(unittest.TestCase):
                 "include": ["control_plane_kit_server_sdk*"],
             },
         )
+        setuptools = metadata["tool"]["setuptools"]
+        self.assertIn("package-data", setuptools)
+        self.assertEqual(
+            setuptools["package-data"],
+            {"control_plane_kit_server_sdk": ["py.typed"]},
+        )
 
     def test_root_import_exports_context_without_outer_dependencies(self) -> None:
         self.assertTrue(
@@ -58,8 +64,13 @@ import sys
 import control_plane_kit_server_sdk as sdk
 
 assert sdk.__version__ == "0.1.0"
-assert sdk.__all__ == ["ControlPlaneInvocationContext", "__version__"]
+assert sdk.__all__ == [
+    "ControlPlaneInvocationContext",
+    "ControlPlaneVariable",
+    "__version__",
+]
 assert sdk.ControlPlaneInvocationContext.__module__ == "control_plane_kit_server_sdk.context"
+assert sdk.ControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.protocol"
 assert "control_plane_kit_core" in sys.modules
 for name in (
     "control_plane_kit_operations",
