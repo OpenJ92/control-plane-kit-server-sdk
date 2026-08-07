@@ -128,7 +128,10 @@ class PackageGateContractTests(unittest.TestCase):
         for expected in (
             "control_plane_kit_server_sdk.__version__",
             "ControlPlaneInvocationContext",
+            "ControlPlaneVariable",
             "unexpected installed SDK context owner",
+            "unexpected installed SDK protocol owner",
+            "installed SDK type marker is missing or malformed",
             "control_plane_kit_core",
             "control_plane_kit_operations",
             "fastapi",

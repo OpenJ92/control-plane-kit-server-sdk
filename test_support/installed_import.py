@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import resources
 import sys
 
 import control_plane_kit_server_sdk
@@ -9,6 +10,7 @@ if control_plane_kit_server_sdk.__version__ != "0.1.0":
     raise SystemExit("unexpected installed SDK version")
 if control_plane_kit_server_sdk.__all__ != [
     "ControlPlaneInvocationContext",
+    "ControlPlaneVariable",
     "__version__",
 ]:
     raise SystemExit("unexpected installed SDK exports")
@@ -17,6 +19,15 @@ if (
     != "control_plane_kit_server_sdk.context"
 ):
     raise SystemExit("unexpected installed SDK context owner")
+if (
+    control_plane_kit_server_sdk.ControlPlaneVariable.__module__
+    != "control_plane_kit_server_sdk.protocol"
+):
+    raise SystemExit("unexpected installed SDK protocol owner")
+
+type_marker = resources.files("control_plane_kit_server_sdk").joinpath("py.typed")
+if not type_marker.is_file() or type_marker.read_bytes() != b"":
+    raise SystemExit("installed SDK type marker is missing or malformed")
 
 forbidden_dependencies = tuple(
     name
