@@ -665,6 +665,7 @@ class AtomicControlPlaneVariableTests(unittest.TestCase):
         classes: list[ast.ClassDef] = []
         snapshot_assignments = 0
         forbidden_attributes: set[str] = set()
+        calls_under_lock: list[str] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 imports.update(alias.name.split(".", 1)[0] for alias in node.names)
@@ -687,6 +688,19 @@ class AtomicControlPlaneVariableTests(unittest.TestCase):
                 "canonical_digest",
             }:
                 forbidden_attributes.add(node.attr)
+            elif isinstance(node, ast.With) and any(
+                isinstance(item.context_expr, ast.Attribute)
+                and isinstance(item.context_expr.value, ast.Name)
+                and item.context_expr.value.id == "self"
+                and item.context_expr.attr == "_lock"
+                for item in node.items
+            ):
+                calls_under_lock.extend(
+                    ast.unparse(value.func)
+                    for statement in node.body
+                    for value in ast.walk(statement)
+                    if isinstance(value, ast.Call)
+                )
 
         self.assertEqual(
             imports,
@@ -704,6 +718,7 @@ class AtomicControlPlaneVariableTests(unittest.TestCase):
         )
         self.assertEqual(snapshot_assignments, 2, "constructor plus one publish site")
         self.assertEqual(forbidden_attributes, set())
+        self.assertEqual(calls_under_lock, [])
         source = path.read_text(encoding="utf-8")
         for forbidden in ("ledger", "replay", "cache", "persist", "authenticate"):
             self.assertNotIn(forbidden, source.lower())
