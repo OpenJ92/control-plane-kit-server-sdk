@@ -63,15 +63,17 @@ The base distribution remains framework-neutral. It must not depend on or
 import control-plane operations, cpk-server, server products, Docker or
 Cloudflare clients, Postgres stores, secret providers, or FastAPI.
 
-The public extension model is exactly one later
-`ControlPlaneVariable[State, Command, Result]` protocol over accepted core
+The public extension model is exactly one
+`ControlPlaneVariable[ReadResult, Command, TransitionResult]` protocol over accepted core
 contracts. Do not introduce a second handler, plugin, reflection, arbitrary
 method-call, URL, HTTP-body, or free-form mutation system.
 
 Process-local implementations must say that they are not durable. Domain-owned
 implementations retain their own UnitOfWork, ledger, replay, and transaction
-semantics. Framework adapters, grant verification, replay, and route accrual
-belong to their named later issues.
+semantics. Issue #1150 owns replay, cache, ledger, and idempotency-key
+interpretation. Framework adapters, grant verification, and route accrual
+belong to their named later issues. `coordination/foundation.json` is
+historical genesis metadata, not a live coordination ledger.
 
 ## Testing
 

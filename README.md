@@ -49,6 +49,24 @@ compatibility. The installed package includes an explicit empty `py.typed`
 marker for its inline annotations. The durable conformance example remains a
 test-owned service and UnitOfWork; the SDK owns no storage or transaction.
 
+`AtomicControlPlaneVariable` is the small process-local implementation for
+workloads that need one in-memory state cell:
+
+```python
+from control_plane_kit_server_sdk import AtomicControlPlaneVariable
+
+variable = AtomicControlPlaneVariable(descriptor, initial_state)
+```
+
+It preserves `command is context.request`, checks the expected version, and
+publishes a whole immutable state snapshot atomically. It captures a snapshot
+under its lock; apply must compare outside the lock, then
+identity-revalidates the snapshot under the lock before publication. A changed
+state advances one version; equal state returns no-change; a changed state at
+the max-safe version fails without publication. It is process-local: state and
+version do not survive restart. Issue #1150 owns replay, cache, ledger, and
+idempotency-key interpretation.
+
 ## Validation
 
 Run the authoritative Docker-first package gate with:
