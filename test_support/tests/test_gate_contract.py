@@ -54,9 +54,15 @@ class PackageGateContractTests(unittest.TestCase):
             "docker build --target test",
             "python -m compileall src tests",
             "python -m unittest discover -s tests -v",
-            "control-plane-kit-server-sdk import ok",
+            "python /test-support/installed_import.py",
         )
-        offsets = [source.index(phase) for phase in phases]
+        offsets: list[int] = []
+        start = 0
+        for phase in phases:
+            offset = source.find(phase, start)
+            self.assertGreaterEqual(offset, 0, phase)
+            offsets.append(offset)
+            start = offset + len(phase)
         self.assertEqual(offsets, sorted(offsets))
         self.assertIn('RUN_ID="$$"', source)
         self.assertIn('docker rm -f "$CONTAINER_NAME"', source)
@@ -67,13 +73,53 @@ class PackageGateContractTests(unittest.TestCase):
 
     def test_dockerfile_has_package_and_test_stages_without_host_python(self) -> None:
         source = self._read("Dockerfile")
+        ignored = set(self._read(".dockerignore").splitlines())
 
         self.assertIn("ARG PYTHON_VERSION=3.14", source)
         self.assertIn("FROM python:${PYTHON_VERSION}-slim AS package", source)
+        self.assertIn(
+            "COPY AGENTS.md GIT-FLOW.md .gitignore pyproject.toml README.md ./",
+            source,
+        )
+        self.assertIn("COPY docs ./docs", source)
         self.assertIn("python -m pip install --no-deps .", source)
+        self.assertNotIn("pip install --upgrade pip", source)
         self.assertIn("FROM package AS test", source)
         self.assertIn("COPY tests ./tests", source)
         self.assertNotIn("pytest", source)
+        self.assertTrue(
+            {
+                ".git",
+                ".github",
+                ".venv",
+                "__pycache__",
+                "*.py[cod]",
+                "build",
+                "dist",
+                "*.egg-info",
+                "test_support",
+            }.issubset(ignored)
+        )
+
+    def test_each_package_run_fails_fast_before_import_smoke(self) -> None:
+        source = self._read("test.sh")
+
+        self.assertEqual(source.count("sh -ceu '"), 2)
+
+    def test_installed_import_remains_version_only_and_behavior_free(self) -> None:
+        gate = self._read("test.sh")
+        source = self._read("test_support/installed_import.py")
+
+        self.assertEqual(gate.count("python /test-support/installed_import.py"), 2)
+        for expected in (
+            "control_plane_kit_server_sdk.__version__",
+            "control_plane_kit_core",
+            "fastapi",
+            "unexpected eager import",
+            "control-plane-kit-server-sdk import ok",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, source)
 
     def test_workflow_is_read_only_and_invokes_only_the_authoritative_gate(self) -> None:
         source = self._read(".github/workflows/tests.yml")

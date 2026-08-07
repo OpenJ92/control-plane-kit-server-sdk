@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import sys
 import tempfile
 import types
 import unittest
@@ -20,7 +22,9 @@ class ExampleTests(unittest.TestCase):
 class PackageIntegrityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.package_root = Path(__file__).resolve().parents[2]
+        cls.package_root = Path(
+            os.environ.get("CPK_PACKAGE_ROOT", Path(__file__).resolve().parents[2])
+        )
 
     def _load_module(self) -> types.ModuleType:
         path = self.package_root / "test_support" / "package_integrity.py"
@@ -29,6 +33,7 @@ class PackageIntegrityTests(unittest.TestCase):
         self.assertIsNotNone(spec)
         self.assertIsNotNone(spec.loader)
         module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
         spec.loader.exec_module(module)
         return module
 
