@@ -75,6 +75,13 @@ interpretation. Framework adapters, grant verification, and route accrual
 belong to their named later issues. `coordination/foundation.json` is
 historical genesis metadata, not a live coordination ledger.
 
+Workload verifier public-key configuration is supplied process-local state. It
+may retain bounded exact core `DelegationPublicKey` values for later signature
+verification, but it does not prove producer provenance, graph admission,
+issuer, audience, lifecycle status, authorization, or restart reconstruction.
+Public PEM is non-secret but integrity-sensitive and remains absent from
+routine representations and diagnostics.
+
 ## Testing
 
 Use Docker-first validation and the Python standard-library `unittest`
