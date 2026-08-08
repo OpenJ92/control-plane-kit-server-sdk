@@ -19,6 +19,18 @@ It is not published to a package index. The base dependency is the immutable
 `3d85dc76300bf88be923531445ce83e9b6c7b23e`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
+Signature-verification dependencies are isolated in one exact optional extra:
+
+```bash
+python -m pip install ".[verification]"
+```
+
+That extra contains only `PyJWT==2.13.0` and `cryptography==50.0.0`. The base
+install and root import remain free of both modules. This establishes bounded
+dependency availability only; #1498 owns the closed signed-grant verifier.
+These exact pins constrain the two named direct dependencies only.
+They do not lock transitive dependency versions, artifact hashes, or publisher attestations.
+
 The root import exposes one neutral invocation value:
 
 ```python
@@ -100,10 +112,13 @@ Run the authoritative Docker-first package gate with:
 
 The default gate is pinned package evidence. Before package build or dependency
 resolution, a structured TOML preflight requires `project.dependencies` to be
-the exact one-element immutable core coordinate declared in `pyproject.toml`.
-The gate then checks package integrity, compiles the current source and tests,
-runs every discoverable standard-library unittest, and imports the installed
-SDK from outside the source tree.
+the exact one-element immutable core coordinate and
+`project.optional-dependencies` to be the exact one-element `verification`
+map declared in `pyproject.toml`. The gate then checks package integrity and
+builds once. A base container proves the SDK without optional dependencies;
+a separate verification container installs `.[verification]`, reruns the
+package tests, and proves exact installed versions and SDK-root import
+laziness. Both containers and the image have process-scoped names and cleanup.
 
 Coordinated source development may explicitly replace only the core dependency:
 
