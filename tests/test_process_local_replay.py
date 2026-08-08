@@ -492,6 +492,36 @@ class ProcessLocalReplayTests(unittest.TestCase):
             _success(second),
         )
 
+    def test_backward_first_observation_cannot_shorten_terminal_retention(self) -> None:
+        module = self._module()
+        clock = MutableClock(10)
+        coordinator = self._coordinator(capacity=1, clock_ns=clock)
+        first = _request()
+        second = _request(request_id="request-2", key="idempotency-2")
+
+        def complete_first():
+            clock.set(20)
+            return _success(first)
+
+        self._execute(coordinator, first, complete_first)
+        clock.set(5)
+        self.assertEqual(
+            self._execute(
+                coordinator,
+                first,
+                lambda: self.fail("backward observation must replay"),
+            ),
+            _success(first),
+        )
+        clock.set(5 + RETENTION_NS)
+        with self.assertRaises(module._NodeControlReplayCapacityExhausted):
+            self._execute(coordinator, second, lambda: _success(second))
+        clock.set(20 + RETENTION_NS)
+        self.assertEqual(
+            self._execute(coordinator, second, lambda: _success(second)),
+            _success(second),
+        )
+
     def test_terminal_retention_cannot_age_before_contended_publication(self) -> None:
         clock = MutableClock(5)
         completion_sampled = Event()
