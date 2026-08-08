@@ -86,6 +86,28 @@ class PackageGateContractTests(unittest.TestCase):
             offsets.append(offset)
             start = offset + len(phase)
         self.assertEqual(offsets, sorted(offsets))
+        base_phase = source[
+            source.index("phase=base-install")
+            : source.index("phase=verification-extra-install")
+        ]
+        verification_phase = source[
+            source.index("phase=verification-extra-install") :
+        ]
+        self.assertNotIn("python -m compileall src tests", base_phase)
+        self.assertNotIn("python -m unittest discover -s tests -v", base_phase)
+        self.assertEqual(
+            verification_phase.count("python -m compileall src tests"),
+            1,
+        )
+        self.assertEqual(
+            verification_phase.count("python -m unittest discover -s tests -v"),
+            1,
+        )
+        self.assertEqual(source.count("python -m compileall src tests"), 1)
+        self.assertEqual(
+            source.count("python -m unittest discover -s tests -v"),
+            2,
+        )
         self.assertIn('RUN_ID="$$"', source)
         self.assertIn(
             'BASE_CONTAINER_NAME="cpk-server-sdk-base-${RUN_ID}"', source
@@ -243,6 +265,42 @@ class PackageGateContractTests(unittest.TestCase):
         self.assertEqual(completed.stdout, "fixture ok\n")
         self.assertEqual(completed.stderr, "")
         self.assertEqual(events, "sdk\njwt\ncryptography\n")
+
+    def test_installed_verification_probe_bounds_metadata_backend_failure(self) -> None:
+        probe = (
+            self.root / "test_support" / "installed_verification_dependencies.py"
+        )
+        completed, events, temporary_root = self._run_verification_environment(
+            pyjwt_version="2.13.0",
+            cryptography_version="50.0.0",
+            arguments=(
+                sys.executable,
+                "-c",
+                "import importlib.metadata\n"
+                "import runpy\n"
+                "def fail_version(_name):\n"
+                "    raise RuntimeError('sensitive metadata backend failure')\n"
+                "importlib.metadata.version = fail_version\n"
+                f"runpy.run_path({str(probe)!r}, run_name='__main__')\n",
+            ),
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout, "")
+        self.assertEqual(
+            completed.stderr,
+            "verification dependencies are not accepted\n",
+        )
+        self.assertLessEqual(len(completed.stderr.encode("utf-8")), 128)
+        self.assertEqual(events, "sdk\n")
+        for excluded in (
+            "sensitive metadata backend failure",
+            "RuntimeError",
+            "Traceback",
+            str(temporary_root),
+        ):
+            with self.subTest(excluded=excluded):
+                self.assertNotIn(excluded, completed.stdout + completed.stderr)
 
     def test_workflow_is_read_only_and_invokes_only_the_authoritative_gate(self) -> None:
         source = self._read(".github/workflows/tests.yml")

@@ -180,6 +180,16 @@ for name in (
                     self.assertIn(required, document)
         self.assertIn("dependency availability", decision)
         self.assertIn("No verifier behavior", decision)
+        for document in (readme, decision):
+            for required in (
+                "named direct dependencies",
+                "do not lock transitive dependency versions",
+                "artifact hashes",
+                "publisher attestations",
+            ):
+                with self.subTest(document=document[:24], required=required):
+                    self.assertIn(required, document)
+        self.assertNotIn("reproducible dependency pair", decision)
 
     def _read(self, relative_path: str) -> str:
         path = REPOSITORY_ROOT / relative_path
