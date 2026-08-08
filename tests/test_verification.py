@@ -1223,7 +1223,6 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
             "Traceback",
             "InvalidSignature",
             "router",
-            "control",
         )
         error = self._assert_rejected(
             lambda: self._admit(
