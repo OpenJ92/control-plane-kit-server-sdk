@@ -182,7 +182,8 @@ class PackageGateContractTests(unittest.TestCase):
                 "build",
                 "dist",
                 "*.egg-info",
-                "test_support",
+                "test_support/*",
+                "!test_support/installed_verification_dependencies.py",
             }.issubset(ignored)
         )
 
