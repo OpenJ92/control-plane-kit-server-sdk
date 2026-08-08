@@ -65,10 +65,15 @@ class PackageGateContractTests(unittest.TestCase):
         phases = (
             "python -m unittest discover -s tests -v",
             "python /test-support/package_integrity.py",
+            "python /test-support/dependency_preflight.py",
             "docker build --target test",
+            "phase=base-install",
+            "python /test-support/installed_import.py",
+            "phase=verification-extra-install",
+            ".[verification]",
             "python -m compileall src tests",
             "python -m unittest discover -s tests -v",
-            "python /test-support/installed_import.py",
+            "python /test-support/installed_verification_dependencies.py",
         )
         offsets: list[int] = []
         start = 0
@@ -79,7 +84,15 @@ class PackageGateContractTests(unittest.TestCase):
             start = offset + len(phase)
         self.assertEqual(offsets, sorted(offsets))
         self.assertIn('RUN_ID="$$"', source)
-        self.assertIn('docker rm -f "$CONTAINER_NAME"', source)
+        self.assertIn(
+            'BASE_CONTAINER_NAME="cpk-server-sdk-base-${RUN_ID}"', source
+        )
+        self.assertIn(
+            'VERIFICATION_CONTAINER_NAME="cpk-server-sdk-verification-${RUN_ID}"',
+            source,
+        )
+        self.assertIn('docker rm -f "$BASE_CONTAINER_NAME"', source)
+        self.assertIn('docker rm -f "$VERIFICATION_CONTAINER_NAME"', source)
         self.assertIn('docker image rm -f "$IMAGE_NAME"', source)
         self.assertNotIn("docker system prune", source)
         self.assertNotIn("docker container prune", source)
@@ -142,6 +155,31 @@ class PackageGateContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, source)
 
+    def test_installed_verification_probe_is_exact_and_root_lazy(self) -> None:
+        gate = self._read("test.sh")
+        source = self._read(
+            "test_support/installed_verification_dependencies.py"
+        )
+
+        self.assertIn(
+            "python /test-support/installed_verification_dependencies.py",
+            gate,
+        )
+        for expected in (
+            'version("PyJWT")',
+            'version("cryptography")',
+            '"2.13.0"',
+            '"50.0.0"',
+            "import control_plane_kit_server_sdk",
+            '"jwt" not in sys.modules',
+            '"cryptography" not in sys.modules',
+            "import jwt",
+            "import cryptography",
+            "verification dependencies import ok",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, source)
+
     def test_workflow_is_read_only_and_invokes_only_the_authoritative_gate(self) -> None:
         source = self._read(".github/workflows/tests.yml")
 
@@ -194,7 +232,6 @@ class PackageGateContractTests(unittest.TestCase):
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, readme)
-
 
 if __name__ == "__main__":
     unittest.main()

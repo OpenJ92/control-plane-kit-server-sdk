@@ -19,6 +19,10 @@ CORE_DEPENDENCY = (
     "3d85dc76300bf88be923531445ce83e9b6c7b23e.zip"
     "#subdirectory=control-plane-kit-core"
 )
+VERIFICATION_DEPENDENCIES = [
+    "PyJWT==2.13.0",
+    "cryptography==50.0.0",
+]
 
 
 class PackageFoundationTests(unittest.TestCase):
@@ -38,7 +42,10 @@ class PackageFoundationTests(unittest.TestCase):
         self.assertEqual(project["version"], "0.1.0")
         self.assertEqual(project["requires-python"], ">=3.11")
         self.assertEqual(project["dependencies"], [CORE_DEPENDENCY])
-        self.assertNotIn("optional-dependencies", project)
+        self.assertEqual(
+            project["optional-dependencies"],
+            {"verification": VERIFICATION_DEPENDENCIES},
+        )
         self.assertNotIn("scripts", project)
         self.assertEqual(
             metadata["tool"]["setuptools"]["packages"]["find"],
@@ -155,6 +162,24 @@ for name in (
         ):
             with self.subTest(required=required):
                 self.assertIn(required, decision)
+
+    def test_verification_extra_docs_define_dependency_only_boundary(self) -> None:
+        readme = self._read("README.md")
+        decision = self._read(
+            "docs/decisions/0009-verification-dependency-proof.md"
+        )
+
+        for document in (readme, decision):
+            for required in (
+                ".[verification]",
+                "PyJWT==2.13.0",
+                "cryptography==50.0.0",
+                "#1498",
+            ):
+                with self.subTest(document=document[:24], required=required):
+                    self.assertIn(required, document)
+        self.assertIn("dependency availability", decision)
+        self.assertIn("No verifier behavior", decision)
 
     def _read(self, relative_path: str) -> str:
         path = REPOSITORY_ROOT / relative_path
