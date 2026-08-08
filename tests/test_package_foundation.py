@@ -127,6 +127,7 @@ for name in (
         }
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.rglob("*.py")):
+            permitted = {"jwt"} if path.name == "verification.py" else set()
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -135,7 +136,7 @@ for name in (
                     roots = {node.module.split(".", 1)[0]}
                 else:
                     roots = set()
-                for name in sorted(roots & forbidden):
+                for name in sorted(roots & (forbidden - permitted)):
                     findings.append(f"{path.relative_to(REPOSITORY_ROOT)} imports {name}")
 
         self.assertEqual(findings, [])

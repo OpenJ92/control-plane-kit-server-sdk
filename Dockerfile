@@ -19,5 +19,6 @@ RUN python -m pip install --no-deps .
 FROM package AS test
 
 COPY tests ./tests
+COPY test_support/installed_verification_dependencies.py ./test_support/
 
 CMD ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]

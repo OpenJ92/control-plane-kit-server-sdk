@@ -166,6 +166,11 @@ class PackageGateContractTests(unittest.TestCase):
         self.assertNotIn("pip install --upgrade pip", source)
         self.assertIn("FROM package AS test", source)
         self.assertIn("COPY tests ./tests", source)
+        self.assertIn(
+            "COPY test_support/installed_verification_dependencies.py "
+            "./test_support/",
+            source,
+        )
         self.assertNotIn("pytest", source)
         self.assertTrue(
             {
@@ -177,7 +182,8 @@ class PackageGateContractTests(unittest.TestCase):
                 "build",
                 "dist",
                 "*.egg-info",
-                "test_support",
+                "test_support/*",
+                "!test_support/installed_verification_dependencies.py",
             }.issubset(ignored)
         )
 
@@ -402,6 +408,12 @@ if "jwt" in sys.modules or "cryptography" in sys.modules:
 with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
     stream.write("sdk\\n")
 """,
+            )
+            (root / "control_plane_kit_server_sdk" / "verification.py").write_text(
+                "import jwt\n"
+                "class Ed25519WorkloadNodeControlVerifier:\n"
+                "    pass\n",
+                encoding="utf-8",
             )
             self._write_fake_module(
                 root,
