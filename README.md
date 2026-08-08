@@ -28,6 +28,8 @@ python -m pip install ".[verification]"
 That extra contains only `PyJWT==2.13.0` and `cryptography==50.0.0`. The base
 install and root import remain free of both modules. This establishes bounded
 dependency availability only; #1498 owns the closed signed-grant verifier.
+These exact pins constrain the two named direct dependencies only.
+They do not lock transitive dependency versions, artifact hashes, or publisher attestations.
 
 The root import exposes one neutral invocation value:
 

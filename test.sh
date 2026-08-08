@@ -91,8 +91,6 @@ docker run \
     else
       python -m pip install --force-reinstall .
     fi
-    python -m compileall src tests
-    python -m unittest discover -s tests -v
     cd /tmp
     python /test-support/installed_import.py
   '

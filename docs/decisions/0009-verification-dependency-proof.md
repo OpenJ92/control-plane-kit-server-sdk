@@ -9,6 +9,10 @@ adds one optional extra, `.[verification]`. Its complete dependency list is
 exactly `PyJWT==2.13.0` followed by `cryptography==50.0.0`; no other optional
 extra is accepted.
 
+These exact pins constrain the two named direct dependencies only.
+They do not lock transitive dependency versions, artifact hashes, or publisher attestations.
+They are not an artifact lock, hash policy, or producer-attestation mechanism.
+
 The structured TOML preflight compares both the base dependency list and the
 complete optional-dependency map before package build or dependency resolution.
 Failure is one bounded category and never echoes candidate coordinates or
@@ -41,6 +45,5 @@ material.
 ## Consequences
 
 Base consumers do not receive cryptographic dependencies. Verification
-consumers opt into one reviewable, reproducible dependency pair, while the
-later verifier remains responsible for all cryptographic and authorization
-semantics.
+consumers opt into one reviewable exact-direct-coordinate pair, while the later
+verifier remains responsible for all cryptographic and authorization semantics.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import version
 import sys
 
 
@@ -26,7 +26,7 @@ def main() -> int:
             version("PyJWT") == "2.13.0"
             and version("cryptography") == "50.0.0"
         )
-    except PackageNotFoundError:
+    except Exception:
         return _reject()
     if not accepted:
         return _reject()
