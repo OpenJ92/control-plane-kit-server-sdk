@@ -484,6 +484,63 @@ class ProcessLocalReplayTests(unittest.TestCase):
             _success(second),
         )
 
+    def test_terminal_retention_cannot_age_before_contended_publication(self) -> None:
+        clock = MutableClock(5)
+        completion_sampled = Event()
+        clock_calls = 0
+
+        def signaling_clock() -> object:
+            nonlocal clock_calls
+            value = clock()
+            clock_calls += 1
+            if clock_calls == 2:
+                completion_sampled.set()
+            return value
+
+        coordinator = self._coordinator(capacity=1, clock_ns=signaling_clock)
+        request = _request()
+        dispatch_entered = Event()
+        release_dispatch = Event()
+        owner_results: list[object] = []
+        owner_errors: list[BaseException] = []
+        dispatch_calls = 0
+
+        def dispatch():
+            nonlocal dispatch_calls
+            dispatch_calls += 1
+            dispatch_entered.set()
+            self.assertTrue(release_dispatch.wait(3), "owner release timed out")
+            return _success(request)
+
+        def run_owner() -> None:
+            try:
+                owner_results.append(self._execute(coordinator, request, dispatch))
+            except BaseException as error:
+                owner_errors.append(error)
+
+        owner = Thread(target=run_owner)
+        owner.start()
+        self.assertTrue(dispatch_entered.wait(3), "owner did not enter dispatch")
+        with coordinator._condition:
+            release_dispatch.set()
+            self.assertTrue(
+                completion_sampled.wait(3),
+                "owner did not sample completion time",
+            )
+            clock.set(5 + RETENTION_NS)
+        self._join(owner)
+
+        replayed = self._execute(
+            coordinator,
+            request,
+            lambda: self.fail("freshly published terminal must not redispatch"),
+        )
+
+        self.assertEqual(owner_errors, [])
+        self.assertEqual(owner_results, [_success(request)])
+        self.assertEqual(replayed, _success(request))
+        self.assertEqual(dispatch_calls, 1)
+
     def test_owner_failures_publish_one_closed_failure_without_diagnostics(self) -> None:
         coordinator = self._coordinator()
         request = _request()
