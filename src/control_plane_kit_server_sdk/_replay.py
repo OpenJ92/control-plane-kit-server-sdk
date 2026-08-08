@@ -334,8 +334,12 @@ class _ProcessLocalNodeControlReplay:
                 return _decode_terminal(terminal_bytes, result_codec, request_id)
             except Exception:
                 pass
+        failed = False
+        decoded: _ApplyResult | None = None
         try:
-            return _decode_terminal(fallback_bytes, result_codec, request_id)
+            decoded = _decode_terminal(fallback_bytes, result_codec, request_id)
         except Exception:
+            failed = True
+        if failed or decoded is None:
             raise _NodeControlReplayContractError()
-
+        return decoded

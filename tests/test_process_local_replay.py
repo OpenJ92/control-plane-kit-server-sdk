@@ -356,10 +356,13 @@ class ProcessLocalReplayTests(unittest.TestCase):
                 )
         self.assertEqual(calls, 0)
 
-        clock = MutableClock(True)
+        clock = MutableClock(RuntimeError("authorization: Bearer clock-secret"))
         coordinator = self._coordinator(clock_ns=clock)
-        with self.assertRaises(module._NodeControlReplayContractError):
+        with self.assertRaises(module._NodeControlReplayContractError) as raised:
             self._execute(coordinator, request, dispatch)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        self.assertNotIn("secret", repr(raised.exception))
         clock.set(0)
         self.assertEqual(self._execute(coordinator, request, dispatch), _success(request))
         self.assertEqual(calls, 1)
@@ -590,6 +593,43 @@ class ProcessLocalReplayTests(unittest.TestCase):
                 _request(request_id="other", key="other-key"),
                 lambda: self.fail("unprunable capacity must stay occupied"),
             )
+
+    def test_completion_clock_exceptions_publish_before_return_or_reraise(self) -> None:
+        for index, completion_error in enumerate(
+            (
+                RuntimeError("authorization: Bearer clock-secret"),
+                ProcessControlSignal(),
+            )
+        ):
+            with self.subTest(error_type=type(completion_error).__name__):
+                clock = MutableClock(10)
+                coordinator = self._coordinator(capacity=1, clock_ns=clock)
+                request = _request(
+                    request_id=f"clock-{index}",
+                    key=f"clock-key-{index}",
+                )
+
+                def dispatch():
+                    clock.set(completion_error)
+                    return _success(request)
+
+                if isinstance(completion_error, Exception):
+                    result = self._execute(coordinator, request, dispatch)
+                else:
+                    with self.assertRaises(ProcessControlSignal):
+                        self._execute(coordinator, request, dispatch)
+                    result = NodeControlFailed(
+                        request_id=request.request_id,
+                        operation=NodeControlOperation.APPLY_COMMAND,
+                    )
+                clock.set(2**63 - 1)
+                replayed = self._execute(
+                    coordinator,
+                    request,
+                    lambda: self.fail("clock failure must not redispatch"),
+                )
+                self.assertEqual(replayed, result)
+                self.assertNotIn("secret", repr(replayed))
 
     def test_coordinator_instances_are_isolated(self) -> None:
         request = _request()
