@@ -67,7 +67,7 @@ class _InFlight:
 class _Terminal:
     digest: str
     result_bytes: bytes
-    completed_at_ns: int | None
+    retention_anchor_ns: int | None
     retention_anchor_pending: bool
 
 
@@ -250,7 +250,7 @@ class _ProcessLocalNodeControlReplay:
             self._entries[key] = _Terminal(
                 digest=digest,
                 result_bytes=publish_bytes,
-                completed_at_ns=None,
+                retention_anchor_ns=None,
                 retention_anchor_pending=(
                     retention_anchor_pending and not unprunable
                 ),
@@ -321,14 +321,14 @@ class _ProcessLocalNodeControlReplay:
                 self._entries[key] = _Terminal(
                     digest=entry.digest,
                     result_bytes=entry.result_bytes,
-                    completed_at_ns=now_ns,
+                    retention_anchor_ns=now_ns,
                     retention_anchor_pending=False,
                 )
                 continue
             if (
-                entry.completed_at_ns is not None
-                and now_ns >= entry.completed_at_ns
-                and now_ns - entry.completed_at_ns >= _RETENTION_NS
+                entry.retention_anchor_ns is not None
+                and now_ns >= entry.retention_anchor_ns
+                and now_ns - entry.retention_anchor_ns >= _RETENTION_NS
             ):
                 expired.append(key)
         for key in expired:
