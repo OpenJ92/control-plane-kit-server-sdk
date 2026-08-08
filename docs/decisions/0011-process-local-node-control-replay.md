@@ -57,4 +57,3 @@ must not add an authority marker to the invocation context.
 - FIFO eviction would permit live replay authority to disappear under load.
 - Persistent replay belongs to domain-owned durable variable implementations,
   not this framework-neutral SDK helper.
-
