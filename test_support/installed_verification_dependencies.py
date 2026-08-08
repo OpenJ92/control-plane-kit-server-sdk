@@ -32,9 +32,17 @@ def main() -> int:
         return _reject()
 
     try:
+        from control_plane_kit_server_sdk.verification import (
+            Ed25519WorkloadNodeControlVerifier,
+        )
         import jwt
         import cryptography
     except Exception:
+        return _reject()
+
+    if Ed25519WorkloadNodeControlVerifier.__module__ != (
+        "control_plane_kit_server_sdk.verification"
+    ):
         return _reject()
 
     print("verification dependencies import ok")

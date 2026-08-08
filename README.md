@@ -102,6 +102,38 @@ complete snapshot after every process restart. Expected issuer and audience
 belong to the held signed-verifier predecessor; #1150 owns authenticated route
 accrual, replay, cache, ledger, and idempotency-key interpretation.
 
+Consumers of `.[verification]` may import the optional closed verifier directly:
+
+```python
+from control_plane_kit_server_sdk.verification import (
+    Ed25519WorkloadNodeControlVerifier,
+)
+
+verifier = Ed25519WorkloadNodeControlVerifier(
+    verifier_keys,
+    expected_issuer="cpk-server",
+    expected_audience="workload:router:control",
+    clock=trusted_clock,
+)
+request = verifier.admit(
+    credential,
+    route_operation=operation,
+    route_variable=variable,
+    candidate=candidate,
+)
+```
+
+The compact type is exactly `CPK-WORKLOAD-NODE-CONTROL+JWT`. Admission uses
+one trusted clock and exact `PyJWT==2.13.0` plus `cryptography==50.0.0` direct
+dependencies. Canonical compact framing and duplicate-aware bounded JSON are
+checked before maintained Ed25519 admission; authentication precedes candidate
+decoding. The verifier returns only an exact core request and never retains or
+renders the credential, signature, candidate, or public key. It owns no private
+key, route framework, graph admission, mutation, or durable state.
+
+Replay remains deliberately outside this verifier. Issue #1150 owns replay,
+cache, ledger, idempotency-key interpretation, and authenticated route accrual.
+
 ## Validation
 
 Run the authoritative Docker-first package gate with:
