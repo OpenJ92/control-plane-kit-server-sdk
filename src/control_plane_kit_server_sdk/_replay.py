@@ -67,6 +67,7 @@ class _InFlight:
 class _Terminal:
     digest: str
     result_bytes: bytes
+    completion_floor_ns: int | None
     retention_anchor_ns: int | None
     retention_anchor_pending: bool
 
@@ -250,6 +251,11 @@ class _ProcessLocalNodeControlReplay:
             self._entries[key] = _Terminal(
                 digest=digest,
                 result_bytes=publish_bytes,
+                completion_floor_ns=(
+                    completion_candidate
+                    if retention_anchor_pending and not unprunable
+                    else None
+                ),
                 retention_anchor_ns=None,
                 retention_anchor_pending=(
                     retention_anchor_pending and not unprunable
@@ -318,10 +324,14 @@ class _ProcessLocalNodeControlReplay:
             if type(entry) is not _Terminal:
                 continue
             if entry.retention_anchor_pending:
+                completion_floor_ns = entry.completion_floor_ns
+                if completion_floor_ns is None:
+                    continue
                 self._entries[key] = _Terminal(
                     digest=entry.digest,
                     result_bytes=entry.result_bytes,
-                    retention_anchor_ns=now_ns,
+                    completion_floor_ns=None,
+                    retention_anchor_ns=max(completion_floor_ns, now_ns),
                     retention_anchor_pending=False,
                 )
                 continue
