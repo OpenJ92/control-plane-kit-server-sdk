@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -180,6 +183,67 @@ class PackageGateContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, source)
 
+    def test_installed_verification_probe_executes_exact_version_contract(self) -> None:
+        cases = (
+            ("accepted", "2.13.0", "50.0.0", True),
+            ("wrong-pyjwt", "2.12.0", "50.0.0", False),
+            ("wrong-cryptography", "2.13.0", "49.0.0", False),
+        )
+        for identity, pyjwt_version, cryptography_version, accepted in cases:
+            with self.subTest(identity=identity):
+                completed, events, temporary_root = self._run_verification_probe(
+                    pyjwt_version=pyjwt_version,
+                    cryptography_version=cryptography_version,
+                )
+                if accepted:
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(
+                        completed.stdout,
+                        "verification dependencies import ok\n",
+                    )
+                    self.assertEqual(completed.stderr, "")
+                    self.assertEqual(events, "sdk\njwt\ncryptography\n")
+                else:
+                    self.assertEqual(completed.returncode, 2)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(
+                        completed.stderr,
+                        "verification dependencies are not accepted\n",
+                    )
+                    self.assertLessEqual(len(completed.stderr.encode("utf-8")), 128)
+                    self.assertEqual(events, "sdk\n")
+                    for excluded in (
+                        pyjwt_version,
+                        cryptography_version,
+                        str(temporary_root),
+                        "sensitive fake module material",
+                    ):
+                        with self.subTest(identity=identity, excluded=excluded):
+                            self.assertNotIn(
+                                excluded,
+                                completed.stdout + completed.stderr,
+                            )
+
+    def test_verification_probe_fixture_is_resolver_free_and_executable(self) -> None:
+        completed, events, _temporary_root = self._run_verification_environment(
+            pyjwt_version="2.13.0",
+            cryptography_version="50.0.0",
+            arguments=(
+                sys.executable,
+                "-c",
+                "from importlib.metadata import version; "
+                "import control_plane_kit_server_sdk; "
+                "assert version('PyJWT') == '2.13.0'; "
+                "assert version('cryptography') == '50.0.0'; "
+                "import jwt; import cryptography; print('fixture ok')",
+            ),
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "fixture ok\n")
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(events, "sdk\njwt\ncryptography\n")
+
     def test_workflow_is_read_only_and_invokes_only_the_authoritative_gate(self) -> None:
         source = self._read(".github/workflows/tests.yml")
 
@@ -208,6 +272,121 @@ class PackageGateContractTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
+
+    def _run_verification_probe(
+        self,
+        *,
+        pyjwt_version: str,
+        cryptography_version: str,
+    ) -> tuple[subprocess.CompletedProcess[str], str, Path]:
+        return self._run_verification_environment(
+            pyjwt_version=pyjwt_version,
+            cryptography_version=cryptography_version,
+            arguments=(
+                sys.executable,
+                str(
+                    self.root
+                    / "test_support"
+                    / "installed_verification_dependencies.py"
+                ),
+            ),
+        )
+
+    def _run_verification_environment(
+        self,
+        *,
+        pyjwt_version: str,
+        cryptography_version: str,
+        arguments: tuple[str, ...],
+    ) -> tuple[subprocess.CompletedProcess[str], str, Path]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            events = root / "events.log"
+            events.write_text("", encoding="utf-8")
+            self._write_fake_module(
+                root,
+                "control_plane_kit_server_sdk",
+                """
+import os
+from pathlib import Path
+import sys
+
+if "jwt" in sys.modules or "cryptography" in sys.modules:
+    raise RuntimeError("optional dependency loaded before SDK root")
+with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
+    stream.write("sdk\\n")
+""",
+            )
+            self._write_fake_module(
+                root,
+                "jwt",
+                """
+import os
+from pathlib import Path
+import sys
+
+if "control_plane_kit_server_sdk" not in sys.modules:
+    raise RuntimeError("SDK root was not imported first")
+with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
+    stream.write("jwt\\n")
+SENSITIVE = "sensitive fake module material"
+""",
+            )
+            self._write_fake_module(
+                root,
+                "cryptography",
+                """
+import os
+from pathlib import Path
+import sys
+
+if "control_plane_kit_server_sdk" not in sys.modules:
+    raise RuntimeError("SDK root was not imported first")
+with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
+    stream.write("cryptography\\n")
+SENSITIVE = "sensitive fake module material"
+""",
+            )
+            self._write_fake_distribution(root, "PyJWT", pyjwt_version)
+            self._write_fake_distribution(
+                root,
+                "cryptography",
+                cryptography_version,
+            )
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "CPK_VERIFICATION_PROBE_EVENTS": str(events),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONPATH": str(root),
+                }
+            )
+            completed = subprocess.run(
+                arguments,
+                cwd=root,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return completed, events.read_text(encoding="utf-8"), root
+
+    @staticmethod
+    def _write_fake_module(root: Path, name: str, source: str) -> None:
+        package = root / name
+        package.mkdir()
+        (package / "__init__.py").write_text(source.lstrip(), encoding="utf-8")
+
+    @staticmethod
+    def _write_fake_distribution(root: Path, name: str, version: str) -> None:
+        metadata = root / f"{name}-{version}.dist-info"
+        metadata.mkdir()
+        (metadata / "METADATA").write_text(
+            "Metadata-Version: 2.1\n"
+            f"Name: {name}\n"
+            f"Version: {version}\n",
+            encoding="utf-8",
+        )
 
     def test_decision_and_readme_define_honest_evidence_modes(self) -> None:
         decision = self._read("docs/decisions/0004-package-integrity-and-ci.md")
