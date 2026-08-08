@@ -394,6 +394,7 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
         }
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.glob("*.py")):
+            permitted = {"jwt"} if path.name == "verification.py" else set()
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -402,7 +403,7 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
                     roots = {node.module.split(".", 1)[0]}
                 else:
                     roots = set()
-                findings.extend(sorted(roots & forbidden))
+                findings.extend(sorted(roots & (forbidden - permitted)))
         self.assertEqual(findings, [])
 
     def test_docs_assign_integrity_provenance_and_verifier_ownership(self) -> None:

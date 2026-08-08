@@ -1,0 +1,1194 @@
+from __future__ import annotations
+
+import ast
+import base64
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
+import importlib
+import json
+from pathlib import Path
+from threading import Event, Thread
+import unittest
+
+import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
+
+from control_plane_kit_core import (
+    ControlPlaneCommandCodec,
+    ControlPlaneTransitionPrecondition,
+    DelegatedWorkloadNodeControlGrant,
+    DelegationKeyAlgorithm,
+    DelegationKeyPurpose,
+    DelegationPublicKey,
+    NodeControlCommandRequest,
+    NodeControlCommandRequestCodec,
+    NodeControlGraphReference,
+    NodeControlGraphReferenceRole,
+    NodeControlOperation,
+    NodeControlPayload,
+    NodeControlRequestDigest,
+    NodeControlTarget,
+    ScalarControlState,
+)
+from control_plane_kit_server_sdk.verifier_keys import (
+    AtomicWorkloadNodeControlVerifierKeySet,
+    WorkloadNodeControlVerifierKeySet,
+)
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = REPOSITORY_ROOT / "src" / "control_plane_kit_server_sdk"
+VERIFICATION_MODULE = "control_plane_kit_server_sdk.verification"
+TOKEN_TYPE = "CPK-WORKLOAD-NODE-CONTROL+JWT"
+ERROR_MESSAGE = "workload node-control credential was rejected"
+ISSUER = "cpk-server"
+AUDIENCE = "workload:router:control"
+NOW = 150
+BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+@dataclass(frozen=True)
+class RawJson:
+    data: bytes
+
+
+class SensitiveCandidate:
+    def __repr__(self) -> str:
+        return "authorization: Bearer candidate-secret"
+
+
+class ExplodingReprCandidate:
+    def __repr__(self) -> str:
+        raise AssertionError("candidate repr must not be evaluated")
+
+
+class SensitiveText(str):
+    def __repr__(self) -> str:
+        return "authorization: Bearer nested-secret"
+
+    def __eq__(self, _other: object) -> bool:
+        raise AssertionError("nested equality must not run")
+
+    def __hash__(self) -> int:
+        raise AssertionError("nested hashing must not run")
+
+
+def _json_value(value: object) -> bytes:
+    if isinstance(value, RawJson):
+        return value.data
+    return json.dumps(
+        value,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+
+
+def _raw_object(pairs: list[tuple[str, object]]) -> bytes:
+    return b"{" + b",".join(
+        json.dumps(key).encode("ascii") + b":" + _json_value(value)
+        for key, value in pairs
+    ) + b"}"
+
+
+def _duplicate_pair(
+    mapping: dict[str, object],
+    key: str,
+    *,
+    value: object | None = None,
+) -> list[tuple[str, object]]:
+    pairs: list[tuple[str, object]] = []
+    for candidate_key, candidate_value in mapping.items():
+        pairs.append((candidate_key, candidate_value))
+        if candidate_key == key:
+            pairs.append((candidate_key, candidate_value if value is None else value))
+    return pairs
+
+
+def _b64url(value: bytes) -> bytes:
+    return base64.urlsafe_b64encode(value).rstrip(b"=")
+
+
+def _b64url_decode(value: bytes) -> bytes:
+    return base64.urlsafe_b64decode(value + b"=" * (-len(value) % 4))
+
+
+def _noncanonical_tail(segment: bytes) -> bytes:
+    index = BASE64URL_ALPHABET.index(chr(segment[-1]))
+    significant_bits = {2: 2, 3: 4}.get(len(segment) % 4)
+    if significant_bits is None:
+        raise AssertionError("fixture segment has no base64url pad bits")
+    pad_bits = 6 - significant_bits
+    candidates = (
+        candidate
+        for candidate in range(64)
+        if candidate != index and candidate >> pad_bits == index >> pad_bits
+    )
+    replacement = BASE64URL_ALPHABET[next(candidates)].encode("ascii")
+    mutated = segment[:-1] + replacement
+    if _b64url_decode(mutated) != _b64url_decode(segment):
+        raise AssertionError("fixture did not preserve decoded signature bytes")
+    return mutated
+
+
+def _json_with_pad_bits(value: dict[str, object]) -> bytes:
+    encoded = _json_value(value)
+    while len(encoded) % 3 == 0:
+        encoded += b" "
+    return encoded
+
+
+def _public_pem(private_key: ed25519.Ed25519PrivateKey) -> str:
+    return private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("ascii")
+
+
+def _reference(
+    role: NodeControlGraphReferenceRole,
+    value: str,
+) -> NodeControlGraphReference:
+    return NodeControlGraphReference(role, value)
+
+
+def _target(**changes: object) -> NodeControlTarget:
+    values: dict[str, object] = {
+        "workspace_id": _reference(NodeControlGraphReferenceRole.WORKSPACE, "workspace-1"),
+        "graph_revision": _reference(
+            NodeControlGraphReferenceRole.GRAPH_REVISION,
+            "revision-7",
+        ),
+        "node_id": _reference(NodeControlGraphReferenceRole.NODE, "router"),
+        "provider_socket_name": _reference(
+            NodeControlGraphReferenceRole.PROVIDER_SOCKET,
+            "control",
+        ),
+    }
+    values.update(changes)
+    return NodeControlTarget(**values)
+
+
+def _variable(value: str = "routing") -> NodeControlGraphReference:
+    return _reference(NodeControlGraphReferenceRole.VARIABLE, value)
+
+
+def _request(
+    operation: NodeControlOperation = NodeControlOperation.APPLY_COMMAND,
+    **changes: object,
+) -> NodeControlCommandRequest:
+    values: dict[str, object] = {
+        "target": _target(),
+        "variable_name": _variable(),
+        "operation": operation,
+        "request_id": "request-1",
+        "idempotency_key": "routing-change-1",
+    }
+    if operation is NodeControlOperation.APPLY_COMMAND:
+        values.update(
+            command_codec=ControlPlaneCommandCodec.REPLACE_SCALAR_V1,
+            precondition=ControlPlaneTransitionPrecondition(expected_version=4),
+            payload=NodeControlPayload(
+                codec=ControlPlaneCommandCodec.REPLACE_SCALAR_V1,
+                state=ScalarControlState("green"),
+            ),
+        )
+    values.update(changes)
+    return NodeControlCommandRequest(**values)
+
+
+def _grant(
+    request: NodeControlCommandRequest,
+    *,
+    key_id: str = "workload-key-a",
+    **changes: object,
+) -> DelegatedWorkloadNodeControlGrant:
+    values: dict[str, object] = {
+        "issuer": ISSUER,
+        "key_id": key_id,
+        "audience": AUDIENCE,
+        "target": request.target,
+        "variable_name": request.variable_name,
+        "operation": request.operation,
+        "command_codec": request.command_codec,
+        "request_id": request.request_id,
+        "idempotency_key": request.idempotency_key,
+        "request_digest": request.canonical_digest(),
+        "issued_at": 100,
+        "not_before": 100,
+        "expires_at": 200,
+        "jti": "grant-1",
+    }
+    values.update(changes)
+    return DelegatedWorkloadNodeControlGrant(**values)
+
+
+def _payload(grant_value: object, **changes: object) -> dict[str, object]:
+    if isinstance(grant_value, DelegatedWorkloadNodeControlGrant):
+        grant_descriptor: object = grant_value.descriptor()
+        values: dict[str, object] = {
+            "iss": grant_value.issuer,
+            "aud": grant_value.audience,
+            "iat": grant_value.issued_at,
+            "nbf": grant_value.not_before,
+            "exp": grant_value.expires_at,
+            "jti": grant_value.jti,
+            "workload_node_control": grant_descriptor,
+        }
+    else:
+        values = {
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+            "iat": 100,
+            "nbf": 100,
+            "exp": 200,
+            "jti": "grant-1",
+            "workload_node_control": grant_value,
+        }
+    values.update(changes)
+    return values
+
+
+def _header(key_id: str = "workload-key-a", **changes: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "alg": "EdDSA",
+        "kid": key_id,
+        "typ": TOKEN_TYPE,
+    }
+    values.update(changes)
+    return values
+
+
+def _signed_compact(
+    private_key: ed25519.Ed25519PrivateKey,
+    *,
+    header_bytes: bytes,
+    payload_bytes: bytes,
+    signature_segment: bytes | None = None,
+) -> bytes:
+    header_segment = _b64url(header_bytes)
+    payload_segment = _b64url(payload_bytes)
+    signing_input = header_segment + b"." + payload_segment
+    signature = _b64url(private_key.sign(signing_input))
+    return signing_input + b"." + (
+        signature if signature_segment is None else signature_segment
+    )
+
+
+def _token(
+    private_key: ed25519.Ed25519PrivateKey,
+    grant: DelegatedWorkloadNodeControlGrant,
+    *,
+    header_changes: dict[str, object] | None = None,
+    payload_changes: dict[str, object] | None = None,
+) -> bytes:
+    header = _header(grant.key_id, **(header_changes or {}))
+    payload = _payload(grant, **(payload_changes or {}))
+    return _signed_compact(
+        private_key,
+        header_bytes=_json_value(header),
+        payload_bytes=_json_value(payload),
+    )
+
+
+def _candidate(request: NodeControlCommandRequest) -> bytes:
+    return _json_value(request.descriptor())
+
+
+@contextmanager
+def _replaced_attribute(owner: object, name: str, replacement: object):
+    original = getattr(owner, name)
+    setattr(owner, name, replacement)
+    try:
+        yield
+    finally:
+        setattr(owner, name, original)
+
+
+class SignedWorkloadVerificationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.private_a = ed25519.Ed25519PrivateKey.generate()
+        self.private_b = ed25519.Ed25519PrivateKey.generate()
+        self.key_a = DelegationPublicKey(
+            "workload-key-a",
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(self.private_a),
+        )
+        self.key_b = DelegationPublicKey(
+            "workload-key-b",
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(self.private_b),
+        )
+        self.snapshot_a = self._snapshot(self.key_a)
+        self.snapshot_a_b = self._snapshot(self.key_b, self.key_a)
+        self.snapshot_b = self._snapshot(self.key_b)
+        self.holder = AtomicWorkloadNodeControlVerifierKeySet(self.snapshot_a)
+
+    def _module(self):
+        try:
+            return importlib.import_module(VERIFICATION_MODULE)
+        except ModuleNotFoundError:
+            self.fail("signed workload verification module is not implemented")
+
+    def _snapshot(
+        self,
+        *keys: DelegationPublicKey,
+    ) -> WorkloadNodeControlVerifierKeySet:
+        return WorkloadNodeControlVerifierKeySet(
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+            keys,
+        )
+
+    def _verifier(self, *, holder=None, clock=None, issuer=ISSUER, audience=AUDIENCE):
+        module = self._module()
+        return module.Ed25519WorkloadNodeControlVerifier(
+            self.holder if holder is None else holder,
+            expected_issuer=issuer,
+            expected_audience=audience,
+            clock=(lambda: NOW) if clock is None else clock,
+        )
+
+    def _admit(
+        self,
+        token: bytes,
+        request: NodeControlCommandRequest,
+        *,
+        verifier=None,
+        route_operation: NodeControlOperation | None = None,
+        route_variable: NodeControlGraphReference | None = None,
+        candidate: object = ...,
+    ) -> NodeControlCommandRequest:
+        selected_candidate = (
+            (None if request.operation is NodeControlOperation.READ_STATE else _candidate(request))
+            if candidate is ...
+            else candidate
+        )
+        return (verifier or self._verifier()).admit(
+            token,
+            route_operation=request.operation if route_operation is None else route_operation,
+            route_variable=request.variable_name if route_variable is None else route_variable,
+            candidate=selected_candidate,
+        )
+
+    def _assert_rejected(self, operation) -> BaseException:
+        module = self._module()
+        with self.assertRaises(module.WorkloadNodeControlVerificationError) as raised:
+            operation()
+        self.assertEqual(str(raised.exception), ERROR_MESSAGE)
+        self.assertEqual(
+            repr(raised.exception),
+            f"WorkloadNodeControlVerificationError({ERROR_MESSAGE!r})",
+        )
+        self.assertEqual(vars(raised.exception), {})
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        return raised.exception
+
+    def _assert_pre_auth_rejected(
+        self,
+        token: bytes,
+        *,
+        candidate: object = b"{malformed-candidate",
+    ) -> None:
+        request = _request()
+        jwt_calls = 0
+        candidate_calls = 0
+
+        def forbidden_jwt(*_args: object, **_kwargs: object) -> object:
+            nonlocal jwt_calls
+            jwt_calls += 1
+            raise AssertionError("maintained signature admission was reached")
+
+        def forbidden_candidate(*_args: object, **_kwargs: object) -> object:
+            nonlocal candidate_calls
+            candidate_calls += 1
+            raise AssertionError("candidate decoder was reached")
+
+        with _replaced_attribute(jwt, "decode", forbidden_jwt), _replaced_attribute(
+            NodeControlCommandRequestCodec,
+            "decode",
+            forbidden_candidate,
+        ):
+            self._assert_rejected(
+                lambda: self._admit(token, request, candidate=candidate)
+            )
+        self.assertEqual(jwt_calls, 0)
+        self.assertEqual(candidate_calls, 0)
+
+    def test_test_owned_ed25519_fixture_is_accepted_by_maintained_pyjwt(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        token = _token(self.private_a, grant)
+
+        claims = jwt.decode(
+            token,
+            self.key_a.public_key_pem,
+            algorithms=["EdDSA"],
+            issuer=ISSUER,
+            audience=AUDIENCE,
+            options={"verify_exp": False, "verify_nbf": False, "verify_iat": False},
+        )
+
+        self.assertEqual(claims, _payload(grant))
+
+    def test_noncanonical_signature_fixture_preserves_exact_decoded_bytes(self) -> None:
+        request = _request()
+        token = _token(self.private_a, _grant(request))
+        header, payload, signature = token.split(b".")
+        mutated_signature = _noncanonical_tail(signature)
+
+        self.assertNotEqual(mutated_signature, signature)
+        self.assertEqual(
+            _b64url_decode(mutated_signature),
+            _b64url_decode(signature),
+        )
+        self.assertNotEqual(b".".join((header, payload, mutated_signature)), token)
+
+    def test_public_module_exports_only_one_verifier_and_one_error(self) -> None:
+        module = self._module()
+
+        self.assertEqual(
+            module.__all__,
+            [
+                "Ed25519WorkloadNodeControlVerifier",
+                "WorkloadNodeControlVerificationError",
+            ],
+        )
+        self.assertEqual(module.Ed25519WorkloadNodeControlVerifier.__module__, VERIFICATION_MODULE)
+        self.assertEqual(module.WorkloadNodeControlVerificationError.__module__, VERIFICATION_MODULE)
+        root = importlib.import_module("control_plane_kit_server_sdk")
+        self.assertNotIn("Ed25519WorkloadNodeControlVerifier", root.__all__)
+        self.assertFalse(hasattr(root, "Ed25519WorkloadNodeControlVerifier"))
+
+    def test_constructor_is_exact_bounded_slotted_and_redacted(self) -> None:
+        verifier = self._verifier()
+
+        self.assertEqual(repr(verifier), "Ed25519WorkloadNodeControlVerifier()")
+        self.assertFalse(hasattr(verifier, "__dict__"))
+        for value, keyword in (
+            (object(), "holder"),
+            (SensitiveText(ISSUER), "issuer"),
+            (SensitiveText(AUDIENCE), "audience"),
+            (object(), "clock"),
+        ):
+            with self.subTest(keyword=keyword):
+                arguments = {
+                    "holder": self.holder,
+                    "issuer": ISSUER,
+                    "audience": AUDIENCE,
+                    "clock": lambda: NOW,
+                }
+                arguments[keyword] = value
+                with self.assertRaises((TypeError, ValueError)) as raised:
+                    self._verifier(
+                        holder=arguments["holder"],
+                        issuer=arguments["issuer"],
+                        audience=arguments["audience"],
+                        clock=arguments["clock"],
+                    )
+                self.assertNotIn("nested-secret", str(raised.exception))
+
+    def test_read_and_apply_return_exact_nominal_requests(self) -> None:
+        for request in (
+            _request(NodeControlOperation.READ_STATE),
+            _request(NodeControlOperation.APPLY_COMMAND),
+        ):
+            with self.subTest(operation=request.operation):
+                token = _token(self.private_a, _grant(request))
+                admitted = self._admit(token, request)
+                self.assertIs(type(admitted), NodeControlCommandRequest)
+                self.assertEqual(admitted, request)
+                self.assertEqual(
+                    NodeControlCommandRequestCodec().decode(admitted.descriptor()),
+                    request,
+                )
+                self.assertEqual(admitted.canonical_digest(), request.canonical_digest())
+
+    def test_credential_and_candidate_outer_types_are_closed_without_repr(self) -> None:
+        request = _request()
+        token = _token(self.private_a, _grant(request))
+        for candidate_token in ("token", bytearray(token), SensitiveCandidate(), ExplodingReprCandidate()):
+            with self.subTest(token_type=type(candidate_token).__name__):
+                self._assert_rejected(
+                    lambda candidate_token=candidate_token: self._admit(
+                        candidate_token,
+                        request,
+                    )
+                )
+        for candidate in ("{}", bytearray(b"{}"), SensitiveCandidate(), ExplodingReprCandidate()):
+            with self.subTest(candidate_type=type(candidate).__name__):
+                self._assert_rejected(
+                    lambda candidate=candidate: self._admit(
+                        token,
+                        request,
+                        candidate=candidate,
+                    )
+                )
+
+    def test_compact_framing_ascii_and_segment_bounds_reject_before_pyjwt(self) -> None:
+        cases = (
+            b"",
+            b"a.b",
+            b"a.b.c.d",
+            b".b.c",
+            b"a..c",
+            b"a.b.",
+            b"a=.b.c",
+            b"a.b.%%",
+            (b"A" * 1025) + b".b.c",
+            b"a." + (b"A" * 8193) + b".c",
+            b"a.b." + (b"A" * 1025),
+            b"A" * 12289,
+            b"a.b.c\xff",
+        )
+        for identity, token in enumerate(cases):
+            with self.subTest(identity=identity):
+                self._assert_pre_auth_rejected(token)
+
+    def test_all_three_compact_segments_require_canonical_base64url_spelling(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        header_bytes = _json_with_pad_bits(_header())
+        payload_bytes = _json_with_pad_bits(_payload(grant))
+        canonical = _signed_compact(
+            self.private_a,
+            header_bytes=header_bytes,
+            payload_bytes=payload_bytes,
+        )
+        header, payload, signature = canonical.split(b".")
+        mutated_header = _noncanonical_tail(header)
+        mutated_payload = _noncanonical_tail(payload)
+        # Header/payload mutations need signatures over their exact noncanonical text.
+        tokens = (
+            mutated_header
+            + b"."
+            + payload
+            + b"."
+            + _b64url(self.private_a.sign(mutated_header + b"." + payload)),
+            header
+            + b"."
+            + mutated_payload
+            + b"."
+            + _b64url(self.private_a.sign(header + b"." + mutated_payload)),
+            b".".join((header, payload, _noncanonical_tail(signature))),
+        )
+        for identity, token in zip(("header", "payload", "signature"), tokens, strict=True):
+            with self.subTest(identity=identity):
+                self._assert_pre_auth_rejected(token)
+
+    def test_noncanonical_signature_tail_rejects_before_pyjwt(self) -> None:
+        request = _request()
+        token = _token(self.private_a, _grant(request))
+        header, payload, signature = token.split(b".")
+        mutated = b".".join((header, payload, _noncanonical_tail(signature)))
+
+        self.assertEqual(_b64url_decode(mutated.split(b".")[2]), _b64url_decode(signature))
+        self._assert_pre_auth_rejected(mutated)
+
+    def test_duplicate_header_members_reject_before_pyjwt_and_candidate(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        payload_bytes = _json_value(_payload(grant))
+        header = _header()
+        for key in ("alg", "kid", "typ"):
+            with self.subTest(key=key):
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=_raw_object(_duplicate_pair(header, key)),
+                    payload_bytes=payload_bytes,
+                )
+                self._assert_pre_auth_rejected(token)
+
+    def test_duplicate_payload_members_reject_before_pyjwt_and_candidate(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        payload = _payload(grant)
+        for key in ("iss", "aud", "iat", "nbf", "exp", "jti", "workload_node_control"):
+            with self.subTest(key=key):
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=_json_value(_header()),
+                    payload_bytes=_raw_object(_duplicate_pair(payload, key)),
+                )
+                self._assert_pre_auth_rejected(token)
+
+    def test_duplicate_grant_members_reject_before_pyjwt_and_candidate(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        grant_descriptor = grant.descriptor()
+        for key in (
+            "issuer",
+            "key_id",
+            "audience",
+            "target",
+            "variable_name",
+            "operation",
+            "command_codec",
+            "request_id",
+            "idempotency_key",
+            "request_digest",
+            "issued_at",
+            "not_before",
+            "expires_at",
+            "jti",
+        ):
+            with self.subTest(key=key):
+                raw_grant = _raw_object(_duplicate_pair(grant_descriptor, key))
+                raw_payload = _raw_object(
+                    list(_payload(grant).items())[:-1]
+                    + [("workload_node_control", RawJson(raw_grant))]
+                )
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=_json_value(_header()),
+                    payload_bytes=raw_payload,
+                )
+                self._assert_pre_auth_rejected(token)
+
+    def test_duplicate_target_and_unknown_members_reject_at_every_depth(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        target_descriptor = grant.target.descriptor()
+        for key in ("workspace_id", "graph_revision", "node_id", "provider_socket_name"):
+            with self.subTest(target_key=key):
+                raw_target = _raw_object(_duplicate_pair(target_descriptor, key))
+                grant_pairs = [
+                    (name, RawJson(raw_target) if name == "target" else value)
+                    for name, value in grant.descriptor().items()
+                ]
+                raw_payload = _raw_object(
+                    [
+                        (name, RawJson(_raw_object(grant_pairs)) if name == "workload_node_control" else value)
+                        for name, value in _payload(grant).items()
+                    ]
+                )
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=_json_value(_header()),
+                    payload_bytes=raw_payload,
+                )
+                self._assert_pre_auth_rejected(token)
+
+    def test_closed_profile_rejects_missing_unknown_nonobject_and_wrong_types(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        header = _header()
+        payload = _payload(grant)
+        grant_descriptor = grant.descriptor()
+        target_descriptor = grant.target.descriptor()
+        cases: list[tuple[bytes, bytes]] = [
+            (_json_value({key: value for key, value in header.items() if key != "typ"}), _json_value(payload)),
+            (_json_value({**header, "x": 1}), _json_value(payload)),
+            (b"[]", _json_value(payload)),
+            (_json_value(header), _json_value({key: value for key, value in payload.items() if key != "jti"})),
+            (_json_value(header), _json_value({**payload, "x": 1})),
+            (_json_value(header), b"[]"),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        "workload_node_control": {
+                            key: value
+                            for key, value in grant_descriptor.items()
+                            if key != "request_digest"
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        "workload_node_control": {**grant_descriptor, "x": 1},
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        "workload_node_control": {
+                            **grant_descriptor,
+                            "target": {
+                                key: value
+                                for key, value in target_descriptor.items()
+                                if key != "node_id"
+                            },
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        "workload_node_control": {
+                            **grant_descriptor,
+                            "target": {**target_descriptor, "x": 1},
+                        },
+                    }
+                ),
+            ),
+            (_json_value({**header, "kid": 7}), _json_value(payload)),
+            (_json_value(header), _json_value({**payload, "iss": 7})),
+        ]
+        for identity, (header_bytes, payload_bytes) in enumerate(cases):
+            with self.subTest(identity=identity):
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=header_bytes,
+                    payload_bytes=payload_bytes,
+                )
+                self._assert_pre_auth_rejected(token)
+
+        for depth in ("header", "payload", "grant", "target"):
+            with self.subTest(unknown_depth=depth):
+                header_pairs = list(_header().items())
+                payload_pairs = list(_payload(grant).items())
+                grant_pairs = list(grant.descriptor().items())
+                target_pairs = list(target_descriptor.items())
+                if depth == "header":
+                    header_pairs.extend((("unknown", 1), ("unknown", 1)))
+                elif depth == "payload":
+                    payload_pairs.extend((("unknown", 1), ("unknown", 1)))
+                elif depth == "grant":
+                    grant_pairs.extend((("unknown", 1), ("unknown", 1)))
+                    payload_pairs[-1] = (
+                        "workload_node_control",
+                        RawJson(_raw_object(grant_pairs)),
+                    )
+                else:
+                    target_pairs.extend((("unknown", 1), ("unknown", 1)))
+                    grant_pairs = [
+                        (name, RawJson(_raw_object(target_pairs)) if name == "target" else value)
+                        for name, value in grant_pairs
+                    ]
+                    payload_pairs[-1] = (
+                        "workload_node_control",
+                        RawJson(_raw_object(grant_pairs)),
+                    )
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=_raw_object(header_pairs),
+                    payload_bytes=_raw_object(payload_pairs),
+                )
+                self._assert_pre_auth_rejected(token)
+
+    def test_bad_signature_profile_key_and_transit_substitution_never_decode_candidate(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        malformed_candidate = b'{"request_id":"a","request_id":"b"}'
+        cases = (
+            _token(self.private_b, grant),
+            _token(self.private_a, grant, header_changes={"alg": "HS256"}),
+            _token(self.private_a, grant, header_changes={"typ": "CPK-GATEWAY-PROBE+JWT"}),
+            _token(self.private_a, grant, header_changes={"kid": "unknown-key"}),
+            _signed_compact(
+                self.private_a,
+                header_bytes=_json_value(_header()),
+                payload_bytes=_json_value(
+                    _payload({"gateway_probe_grant": "transit-authority"})
+                ),
+            ),
+        )
+        for identity, token in enumerate(cases):
+            with self.subTest(identity=identity):
+                candidate_calls = 0
+
+                def forbidden_candidate(*_args: object, **_kwargs: object) -> object:
+                    nonlocal candidate_calls
+                    candidate_calls += 1
+                    raise AssertionError("candidate decoder was reached")
+
+                with _replaced_attribute(
+                    NodeControlCommandRequestCodec,
+                    "decode",
+                    forbidden_candidate,
+                ):
+                    self._assert_rejected(
+                        lambda token=token: self._admit(
+                            token,
+                            request,
+                            candidate=malformed_candidate,
+                        )
+                    )
+                self.assertEqual(candidate_calls, 0)
+
+    def test_expired_and_not_yet_valid_grants_reject_before_candidate_with_one_clock(self) -> None:
+        request = _request()
+        grants = (
+            _grant(request, issued_at=0, not_before=0, expires_at=NOW),
+            _grant(request, issued_at=NOW + 1, not_before=NOW + 1, expires_at=NOW + 2),
+        )
+        for identity, grant in enumerate(grants):
+            with self.subTest(identity=identity):
+                clock_calls = 0
+                candidate_calls = 0
+
+                def clock() -> int:
+                    nonlocal clock_calls
+                    clock_calls += 1
+                    return NOW
+
+                def forbidden_candidate(*_args: object, **_kwargs: object) -> object:
+                    nonlocal candidate_calls
+                    candidate_calls += 1
+                    raise AssertionError("candidate decoder was reached")
+
+                with _replaced_attribute(
+                    NodeControlCommandRequestCodec,
+                    "decode",
+                    forbidden_candidate,
+                ):
+                    self._assert_rejected(
+                        lambda: self._admit(
+                            _token(self.private_a, grant),
+                            request,
+                            verifier=self._verifier(clock=clock),
+                            candidate=b"{hostile-malformed-candidate",
+                        )
+                    )
+                self.assertEqual(clock_calls, 1)
+                self.assertEqual(candidate_calls, 0)
+
+    def test_valid_admission_reads_clock_exactly_once_and_reuses_now(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        clock_calls = 0
+
+        def clock() -> int:
+            nonlocal clock_calls
+            clock_calls += 1
+            return NOW
+
+        admitted = self._admit(
+            _token(self.private_a, grant),
+            request,
+            verifier=self._verifier(clock=clock),
+        )
+        self.assertEqual(admitted, request)
+        self.assertEqual(clock_calls, 1)
+
+    def test_apply_candidate_is_strict_only_after_valid_authentication(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        token = _token(self.private_a, grant)
+        descriptor = request.descriptor()
+        duplicate = _raw_object(_duplicate_pair(descriptor, "request_id"))
+        unknown = _json_value({**descriptor, "body": "not-a-command"})
+        cases = (b"{", b"[]", b"\xff", duplicate, unknown, b"x" * 16385)
+        for identity, candidate in enumerate(cases):
+            with self.subTest(identity=identity):
+                self._assert_rejected(
+                    lambda candidate=candidate: self._admit(
+                        token,
+                        request,
+                        candidate=candidate,
+                    )
+                )
+
+        read = _request(NodeControlOperation.READ_STATE)
+        self._assert_rejected(
+            lambda: self._admit(
+                _token(self.private_a, _grant(read)),
+                read,
+                candidate=b"{}",
+            )
+        )
+
+    def test_outer_claims_and_embedded_grant_must_be_exactly_congruent(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        cases = (
+            {"iss": "other-issuer"},
+            {"aud": "other-audience"},
+            {"iat": 101},
+            {"nbf": 101},
+            {"exp": 199},
+            {"jti": "grant-other"},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                self._assert_rejected(
+                    lambda changes=changes: self._admit(
+                        _token(self.private_a, grant, payload_changes=changes),
+                        request,
+                    )
+                )
+
+    def test_registered_claims_and_time_domain_are_strict(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        cases = (
+            _token(self.private_a, grant, payload_changes={"iss": ISSUER + "-other"}),
+            _token(self.private_a, grant, payload_changes={"aud": [AUDIENCE]}),
+            _token(self.private_a, grant, payload_changes={"iat": 100.0}),
+            _token(self.private_a, grant, payload_changes={"nbf": True}),
+            _token(self.private_a, grant, payload_changes={"exp": "200"}),
+            _token(self.private_a, grant, payload_changes={"jti": 1}),
+        )
+        for identity, token in enumerate(cases):
+            with self.subTest(identity=identity):
+                self._assert_rejected(lambda token=token: self._admit(token, request))
+
+        for clock_value in (-1, True, 150.0, "150"):
+            with self.subTest(clock_value=clock_value):
+                self._assert_rejected(
+                    lambda clock_value=clock_value: self._admit(
+                        _token(self.private_a, grant),
+                        request,
+                        verifier=self._verifier(clock=lambda: clock_value),
+                    )
+                )
+
+    def test_every_core_request_binding_and_route_binding_is_exact(self) -> None:
+        request = _request()
+        target_changes = (
+            {"workspace_id": _reference(NodeControlGraphReferenceRole.WORKSPACE, "workspace-2")},
+            {"graph_revision": _reference(NodeControlGraphReferenceRole.GRAPH_REVISION, "revision-8")},
+            {"node_id": _reference(NodeControlGraphReferenceRole.NODE, "router-2")},
+            {"provider_socket_name": _reference(NodeControlGraphReferenceRole.PROVIDER_SOCKET, "control-2")},
+        )
+        grants = [
+            _grant(request, target=_target(**changes)) for changes in target_changes
+        ]
+        grants.extend(
+            (
+                _grant(request, variable_name=_variable("routing-2")),
+                _grant(request, command_codec=ControlPlaneCommandCodec.REPLACE_MAP_V1),
+                _grant(request, request_id="request-2"),
+                _grant(request, idempotency_key="routing-change-2"),
+                _grant(request, request_digest=NodeControlRequestDigest("0" * 64)),
+            )
+        )
+        for identity, grant in enumerate(grants):
+            with self.subTest(identity=identity):
+                self._assert_rejected(
+                    lambda grant=grant: self._admit(
+                        _token(self.private_a, grant),
+                        request,
+                    )
+                )
+
+        valid = _token(self.private_a, _grant(request))
+        self._assert_rejected(
+            lambda: self._admit(
+                valid,
+                request,
+                route_operation=NodeControlOperation.READ_STATE,
+            )
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                valid,
+                request,
+                route_variable=_variable("routing-2"),
+            )
+        )
+
+    def test_route_reference_nested_text_is_exact_before_equality(self) -> None:
+        request = _request()
+        route_variable = _variable()
+        object.__setattr__(route_variable, "value", SensitiveText("routing"))
+
+        self._assert_rejected(
+            lambda: self._admit(
+                _token(self.private_a, _grant(request)),
+                request,
+                route_variable=route_variable,
+            )
+        )
+
+    def test_key_material_is_workload_ed25519_and_snapshots_are_a_a_plus_b_b(self) -> None:
+        request_a = _request()
+        grant_a = _grant(request_a)
+        token_a = _token(self.private_a, grant_a)
+        self.assertEqual(self._admit(token_a, request_a), request_a)
+
+        self.holder.replace(self.snapshot_a_b)
+        request_b = _request(request_id="request-b", idempotency_key="change-b")
+        grant_b = _grant(request_b, key_id="workload-key-b", jti="grant-b")
+        token_b = _token(self.private_b, grant_b)
+        self.assertEqual(self._admit(token_a, request_a), request_a)
+        self.assertEqual(self._admit(token_b, request_b), request_b)
+
+        self.holder.replace(self.snapshot_b)
+        self._assert_rejected(lambda: self._admit(token_a, request_a))
+        self.assertEqual(self._admit(token_b, request_b), request_b)
+
+        malformed = DelegationPublicKey(
+            "workload-key-a",
+            DelegationKeyAlgorithm.ED25519,
+            "-----BEGIN PUBLIC KEY-----\nnot-cryptographic-material\n-----END PUBLIC KEY-----\n",
+        )
+        malformed_holder = AtomicWorkloadNodeControlVerifierKeySet(self._snapshot(malformed))
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(holder=malformed_holder),
+            )
+        )
+
+        rsa_private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        rsa_pem = rsa_private.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("ascii")
+        rsa_material = DelegationPublicKey(
+            "workload-key-a",
+            DelegationKeyAlgorithm.ED25519,
+            rsa_pem,
+        )
+        rsa_holder = AtomicWorkloadNodeControlVerifierKeySet(self._snapshot(rsa_material))
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(holder=rsa_holder),
+            )
+        )
+
+        wrong_purpose_snapshot = self._snapshot(self.key_a)
+        object.__setattr__(
+            wrong_purpose_snapshot,
+            "purpose",
+            DelegationKeyPurpose.GATEWAY_PROBE,
+        )
+        wrong_purpose_holder = AtomicWorkloadNodeControlVerifierKeySet(
+            wrong_purpose_snapshot
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(holder=wrong_purpose_holder),
+            )
+        )
+
+    def test_one_admission_uses_one_complete_key_snapshot_during_replacement(self) -> None:
+        request = _request()
+        token = _token(self.private_a, _grant(request))
+        entered = Event()
+        release = Event()
+        result: list[object] = []
+        original_decode = jwt.decode
+
+        def blocking_decode(*args: object, **kwargs: object) -> object:
+            entered.set()
+            if not release.wait(3):
+                raise AssertionError("snapshot test did not release signature admission")
+            return original_decode(*args, **kwargs)
+
+        def admit() -> None:
+            try:
+                result.append(self._admit(token, request))
+            except BaseException as error:
+                result.append(error)
+
+        with _replaced_attribute(jwt, "decode", blocking_decode):
+            thread = Thread(target=admit)
+            thread.start()
+            self.assertTrue(entered.wait(3))
+            self.holder.replace(self.snapshot_b)
+            release.set()
+            thread.join(3)
+            self.assertFalse(thread.is_alive())
+
+        self.assertEqual(result, [request])
+
+    def test_errors_never_expose_credential_key_candidate_or_library_material(self) -> None:
+        request = _request()
+        token = _token(self.private_b, _grant(request))
+        marker_values = (
+            token.decode("ascii"),
+            self.key_a.key_id,
+            self.key_a.fingerprint_sha256,
+            self.key_a.public_key_pem,
+            "candidate-secret",
+            "authorization",
+            "Traceback",
+            "InvalidSignature",
+            "router",
+            "control",
+        )
+        error = self._assert_rejected(
+            lambda: self._admit(
+                token,
+                request,
+                candidate=SensitiveCandidate(),
+            )
+        )
+        rendered = str(error) + repr(error)
+        self.assertLessEqual(len(rendered.encode("utf-8")), 256)
+        for marker in marker_values:
+            with self.subTest(marker=marker[:32]):
+                self.assertNotIn(marker, rendered)
+
+    def test_optional_module_imports_and_installed_probe_preserve_root_laziness(self) -> None:
+        module_path = PACKAGE_ROOT / "verification.py"
+        self.assertTrue(module_path.is_file())
+        tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+        roots: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                roots.add(node.module.split(".", 1)[0])
+        self.assertIn("jwt", roots)
+        self.assertNotIn("cryptography", roots)
+        self.assertTrue(
+            roots.isdisjoint(
+                {
+                    "control_plane_kit_operations",
+                    "control_plane_kit_servers",
+                    "fastapi",
+                    "psycopg",
+                    "docker",
+                    "cloudflare",
+                }
+            )
+        )
+
+        helper = REPOSITORY_ROOT / "test_support" / "installed_verification_dependencies.py"
+        helper_tree = ast.parse(helper.read_text(encoding="utf-8"), filename=str(helper))
+        imported = {
+            node.module
+            for node in ast.walk(helper_tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+        self.assertIn(VERIFICATION_MODULE, imported)
+
+    def test_readme_and_decision_0010_assign_security_and_deferred_ownership(self) -> None:
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        decision_path = (
+            REPOSITORY_ROOT
+            / "docs"
+            / "decisions"
+            / "0010-signed-workload-node-control-admission.md"
+        )
+        self.assertTrue(decision_path.is_file())
+        decision = decision_path.read_text(encoding="utf-8")
+        for required in (
+            "Ed25519WorkloadNodeControlVerifier",
+            "CPK-WORKLOAD-NODE-CONTROL+JWT",
+            "PyJWT==2.13.0",
+            "cryptography==50.0.0",
+            "one trusted clock",
+            "authentication precedes candidate decoding",
+            "duplicate",
+            "replay",
+            "#1150",
+            "no private key",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, readme + decision)
+
+
+if __name__ == "__main__":
+    unittest.main()
