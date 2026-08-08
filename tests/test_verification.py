@@ -46,6 +46,8 @@ ISSUER = "cpk-server"
 AUDIENCE = "workload:router:control"
 NOW = 150
 BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+MAX_STRUCTURAL_JSON_DEPTH = 16
+MAX_STRUCTURAL_JSON_MEMBERS = 64
 
 
 @dataclass(frozen=True)
@@ -779,6 +781,44 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
                 )
                 self._assert_pre_auth_rejected(token)
 
+    def test_recursive_depth_and_member_budgets_reject_before_pyjwt(self) -> None:
+        request = _request()
+        grant = _grant(request)
+        excessive_depth = (
+            b"[" * (MAX_STRUCTURAL_JSON_DEPTH + 1)
+            + b"0"
+            + b"]" * (MAX_STRUCTURAL_JSON_DEPTH + 1)
+        )
+        excessive_members = _raw_object(
+            [
+                (f"member_{index:02d}", index)
+                for index in range(MAX_STRUCTURAL_JSON_MEMBERS + 1)
+            ]
+        )
+        tokens = tuple(
+            _signed_compact(
+                self.private_a,
+                header_bytes=_json_value(_header()),
+                payload_bytes=_raw_object(
+                    [
+                        (
+                            name,
+                            RawJson(candidate)
+                            if name == "workload_node_control"
+                            else value,
+                        )
+                        for name, value in _payload(grant).items()
+                    ]
+                ),
+            )
+            for candidate in (excessive_depth, excessive_members)
+        )
+
+        for identity, token in zip(("depth", "members"), tokens, strict=True):
+            with self.subTest(identity=identity):
+                self.assertLessEqual(len(token.split(b".")[1]), 8192)
+                self._assert_pre_auth_rejected(token)
+
     def test_bad_signature_profile_key_and_transit_substitution_never_decode_candidate(self) -> None:
         request = _request()
         grant = _grant(request)
@@ -960,6 +1000,11 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
         grants.extend(
             (
                 _grant(request, variable_name=_variable("routing-2")),
+                _grant(
+                    request,
+                    operation=NodeControlOperation.READ_STATE,
+                    command_codec=None,
+                ),
                 _grant(request, command_codec=ControlPlaneCommandCodec.REPLACE_MAP_V1),
                 _grant(request, request_id="request-2"),
                 _grant(request, idempotency_key="routing-change-2"),
@@ -990,6 +1035,69 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
                 route_variable=_variable("routing-2"),
             )
         )
+
+    def test_header_and_registered_claims_are_congruent_after_maintained_admission(
+        self,
+    ) -> None:
+        request = _request()
+        cases = (
+            (
+                "issuer",
+                _grant(request, issuer="embedded-issuer"),
+                {},
+                {"iss": ISSUER},
+            ),
+            (
+                "audience",
+                _grant(request, audience="embedded-audience"),
+                {},
+                {"aud": AUDIENCE},
+            ),
+            (
+                "key-id",
+                _grant(request, key_id="workload-key-b"),
+                {"kid": "workload-key-a"},
+                {},
+            ),
+        )
+        for identity, grant, header_changes, payload_changes in cases:
+            with self.subTest(identity=identity):
+                token = _token(
+                    self.private_a,
+                    grant,
+                    header_changes=header_changes,
+                    payload_changes=payload_changes,
+                )
+                maintained_claims = jwt.decode(
+                    token,
+                    self.key_a.public_key_pem,
+                    algorithms=["EdDSA"],
+                    issuer=ISSUER,
+                    audience=AUDIENCE,
+                    options={
+                        "verify_exp": False,
+                        "verify_nbf": False,
+                        "verify_iat": False,
+                    },
+                )
+                self.assertEqual(maintained_claims["iss"], ISSUER)
+                self.assertEqual(maintained_claims["aud"], AUDIENCE)
+                self.assertEqual(
+                    jwt.get_unverified_header(token)["kid"],
+                    "workload-key-a",
+                )
+
+                jwt_calls = 0
+                original_decode = jwt.decode
+
+                def counted_decode(*args: object, **kwargs: object) -> object:
+                    nonlocal jwt_calls
+                    jwt_calls += 1
+                    return original_decode(*args, **kwargs)
+
+                with _replaced_attribute(jwt, "decode", counted_decode):
+                    self._assert_rejected(lambda: self._admit(token, request))
+                self.assertEqual(jwt_calls, 1)
 
     def test_route_reference_nested_text_is_exact_before_equality(self) -> None:
         request = _request()
