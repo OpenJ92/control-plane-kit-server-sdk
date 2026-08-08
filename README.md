@@ -138,6 +138,18 @@ framework, graph admission, mutation, or durable state.
 Replay remains deliberately outside this verifier. Issue #1150 owns replay,
 cache, ledger, idempotency-key interpretation, and authenticated route accrual.
 
+The first #1150 child, #1506, adds a private process-local replay coordinator
+for already admitted APPLY requests. It stores at most 16,384 result bytes per
+entry, retains published terminals for exactly 300 seconds, and never prunes an
+in-flight reservation. It is not durable: restart loses all entries, while
+domain-owned durable variables retain their own ledger and transaction truth.
+
+The coordinator is synchronous. The later #1507 route adapter must install one
+coordinator per application or route set, preserve admission before replay,
+and run the whole call on a worker thread rather than blocking an event loop.
+It adds no public SDK export, authentication claim, graph authority, provider
+effect, or persistence boundary.
+
 ## Validation
 
 Run the authoritative Docker-first package gate with:
