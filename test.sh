@@ -80,7 +80,7 @@ echo "phase=base-install"
 docker run \
   --name "$BASE_CONTAINER_NAME" \
   -v "$ROOT/test_support:/test-support:ro" \
-  "${CORE_MOUNT_ARGS[@]}" \
+  ${CORE_MOUNT_ARGS[@]+"${CORE_MOUNT_ARGS[@]}"} \
   -e "CPK_TEST_DEPENDENCY_MODE=$DEPENDENCY_MODE" \
   "$IMAGE_NAME" \
   sh -ceu '
@@ -99,7 +99,7 @@ echo "phase=verification-extra-install"
 docker run \
   --name "$VERIFICATION_CONTAINER_NAME" \
   -v "$ROOT/test_support:/test-support:ro" \
-  "${CORE_MOUNT_ARGS[@]}" \
+  ${CORE_MOUNT_ARGS[@]+"${CORE_MOUNT_ARGS[@]}"} \
   -e "CPK_TEST_DEPENDENCY_MODE=$DEPENDENCY_MODE" \
   "$IMAGE_NAME" \
   sh -ceu '
