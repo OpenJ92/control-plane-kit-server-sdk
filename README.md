@@ -99,8 +99,9 @@ Public PEM is non-secret but integrity-sensitive and is omitted from routine
 representations. The key set does not prove producer provenance, graph
 admission, lifecycle status, or authority. Trusted composition must supply a
 complete snapshot after every process restart. Expected issuer and audience
-belong to the held signed-verifier predecessor; #1150 owns authenticated route
-accrual, replay, cache, ledger, and idempotency-key interpretation.
+are trusted process-composition inputs to the #1498 verifier; #1150 owns
+authenticated route accrual, replay, cache, ledger, and idempotency-key
+interpretation.
 
 Consumers of `.[verification]` may import the optional closed verifier directly:
 
@@ -128,8 +129,11 @@ one trusted clock and exact `PyJWT==2.13.0` plus `cryptography==50.0.0` direct
 dependencies. Canonical compact framing and duplicate-aware bounded JSON are
 checked before maintained Ed25519 admission; authentication precedes candidate
 decoding. The verifier returns only an exact core request and never retains or
-renders the credential, signature, candidate, or public key. It owns no private
-key, route framework, graph admission, mutation, or durable state.
+renders the credential, signature, or candidate. It intentionally retains the
+process-local public-key holder and reads its non-secret, integrity-sensitive
+public material during admission; that holder and material remain absent from
+routine representations and diagnostics. It owns no private key, route
+framework, graph admission, mutation, or durable state.
 
 Replay remains deliberately outside this verifier. Issue #1150 owns replay,
 cache, ledger, idempotency-key interpretation, and authenticated route accrual.
