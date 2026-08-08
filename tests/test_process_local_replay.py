@@ -467,7 +467,7 @@ class ProcessLocalReplayTests(unittest.TestCase):
         self.assertEqual(second_result, _success(second))
         self.assertEqual(owner_results, [_success(first)])
 
-    def test_terminal_expiry_starts_at_publication_and_never_evicts_early(self) -> None:
+    def test_terminal_expiry_starts_at_first_postpublication_observation(self) -> None:
         module = self._module()
         clock = MutableClock(5)
         coordinator = self._coordinator(capacity=1, clock_ns=clock)
@@ -475,6 +475,14 @@ class ProcessLocalReplayTests(unittest.TestCase):
         second = _request(request_id="request-2", key="idempotency-2")
 
         self._execute(coordinator, first, lambda: _success(first))
+        self.assertEqual(
+            self._execute(
+                coordinator,
+                first,
+                lambda: self.fail("published terminal must replay while anchoring"),
+            ),
+            _success(first),
+        )
         clock.set(5 + RETENTION_NS - 1)
         with self.assertRaises(module._NodeControlReplayCapacityExhausted):
             self._execute(coordinator, second, lambda: _success(second))
@@ -540,6 +548,12 @@ class ProcessLocalReplayTests(unittest.TestCase):
         self.assertEqual(owner_results, [_success(request)])
         self.assertEqual(replayed, _success(request))
         self.assertEqual(dispatch_calls, 1)
+        clock.set(5 + RETENTION_NS * 2)
+        second = _request(request_id="request-2", key="idempotency-2")
+        self.assertEqual(
+            self._execute(coordinator, second, lambda: _success(second)),
+            _success(second),
+        )
 
     def test_owner_failures_publish_one_closed_failure_without_diagnostics(self) -> None:
         coordinator = self._coordinator()

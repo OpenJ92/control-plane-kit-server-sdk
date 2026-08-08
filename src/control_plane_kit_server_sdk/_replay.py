@@ -68,6 +68,7 @@ class _Terminal:
     digest: str
     result_bytes: bytes
     completed_at_ns: int | None
+    retention_anchor_pending: bool
 
 
 _Entry = _InFlight | _Terminal
@@ -221,7 +222,7 @@ class _ProcessLocalNodeControlReplay:
                 control_exception = error
                 unprunable = True
 
-        completed_at_ns: int | None = None
+        retention_anchor_pending = False
         if control_exception is None:
             try:
                 completion_candidate = self._clock_ns()
@@ -233,12 +234,10 @@ class _ProcessLocalNodeControlReplay:
                 type(completion_candidate) is int
                 and initial_ns <= completion_candidate <= _MAX_CLOCK_NS
             ):
-                completed_at_ns = completion_candidate
+                retention_anchor_pending = True
             else:
                 publish_bytes = fallback_bytes
                 unprunable = True
-        if unprunable:
-            completed_at_ns = None
 
         with self._condition:
             entry = self._entries.get(key)
@@ -251,7 +250,10 @@ class _ProcessLocalNodeControlReplay:
             self._entries[key] = _Terminal(
                 digest=digest,
                 result_bytes=publish_bytes,
-                completed_at_ns=completed_at_ns,
+                completed_at_ns=None,
+                retention_anchor_pending=(
+                    retention_anchor_pending and not unprunable
+                ),
             )
             self._condition.notify_all()
 
@@ -311,14 +313,24 @@ class _ProcessLocalNodeControlReplay:
         return value
 
     def _prune(self, now_ns: int) -> None:
-        expired = [
-            key
-            for key, entry in self._entries.items()
-            if type(entry) is _Terminal
-            and entry.completed_at_ns is not None
-            and now_ns >= entry.completed_at_ns
-            and now_ns - entry.completed_at_ns >= _RETENTION_NS
-        ]
+        expired: list[str] = []
+        for key, entry in tuple(self._entries.items()):
+            if type(entry) is not _Terminal:
+                continue
+            if entry.retention_anchor_pending:
+                self._entries[key] = _Terminal(
+                    digest=entry.digest,
+                    result_bytes=entry.result_bytes,
+                    completed_at_ns=now_ns,
+                    retention_anchor_pending=False,
+                )
+                continue
+            if (
+                entry.completed_at_ns is not None
+                and now_ns >= entry.completed_at_ns
+                and now_ns - entry.completed_at_ns >= _RETENTION_NS
+            ):
+                expired.append(key)
         for key in expired:
             del self._entries[key]
 

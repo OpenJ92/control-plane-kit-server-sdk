@@ -13,10 +13,13 @@ as intent identity. Same-key/same-digest callers converge on one dispatch and
 fresh strict result copies; changed intent conflicts before dispatch.
 
 In-flight reservations are capacity-counted, non-expiring, and non-prunable.
-Terminal retention begins at publication and lasts exactly 300 seconds. The
-coordinator stores compact UTF-8 JSON result bytes capped at 16,384 bytes per
-entry. At most 4,096 entries may exist. Unexpired or in-flight entries are not
-evicted to admit unrelated work.
+Terminal retention cannot begin before publication: the first safe clock
+observation by a later call anchors the published terminal for 300 seconds.
+The first later call therefore replays even after a long idle period; from that
+observation, additional retention is exactly one window. Idle memory remains
+bounded by capacity. The coordinator stores compact UTF-8 JSON result bytes
+capped at 16,384 bytes per entry. At most 4,096 entries may exist. Unexpired or
+in-flight entries are not evicted to admit unrelated work.
 
 The coordinator is not durable. Restart loses all entries, and it creates no
 ledger, transaction, provider effect, or cross-process coordination. Durable
