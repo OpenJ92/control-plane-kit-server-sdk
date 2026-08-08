@@ -48,6 +48,34 @@ class PackageGateContractTests(unittest.TestCase):
         )
         self.assertNotIn("../control-plane-kit", source)
 
+    def test_optional_local_core_mount_is_bash_32_nounset_safe(self) -> None:
+        source = self._read("test.sh")
+        portable_expansion = '${CORE_MOUNT_ARGS[@]+"${CORE_MOUNT_ARGS[@]}"}'
+        mount_lines = [
+            line.strip().removesuffix(" \\")
+            for line in source.splitlines()
+            if "CORE_MOUNT_ARGS[@]" in line
+        ]
+
+        self.assertEqual(mount_lines, [portable_expansion, portable_expansion])
+        script = (
+            "set -u; "
+            "CORE_MOUNT_ARGS=(); "
+            f"set -- {portable_expansion}; test \"$#\" -eq 0; "
+            "CORE_MOUNT_ARGS=(-v '/path with space:/workspace:ro'); "
+            f"set -- {portable_expansion}; "
+            "test \"$#\" -eq 2; test \"$1\" = -v; "
+            "test \"$2\" = '/path with space:/workspace:ro'"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_structured_dependency_preflight_precedes_build_and_pip(self) -> None:
         source = self._read("test.sh")
 
