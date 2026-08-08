@@ -166,6 +166,11 @@ class PackageGateContractTests(unittest.TestCase):
         self.assertNotIn("pip install --upgrade pip", source)
         self.assertIn("FROM package AS test", source)
         self.assertIn("COPY tests ./tests", source)
+        self.assertIn(
+            "COPY test_support/installed_verification_dependencies.py "
+            "./test_support/",
+            source,
+        )
         self.assertNotIn("pytest", source)
         self.assertTrue(
             {
