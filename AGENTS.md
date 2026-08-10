@@ -1,0 +1,144 @@
+# control-plane-kit-server-sdk Agent Guide
+
+`control-plane-kit-server-sdk` is the framework-neutral workload-facing SDK
+for Control Plane Kit node control. It consumes the pure contracts published
+by the pinned `control-plane-kit-core` distribution.
+
+Core never imports the SDK.
+
+The SDK does not own control-plane operations, server products, provider
+effects, application truth, or the cpk-server process. Application and domain
+packages may implement the SDK protocol while retaining ownership of their own
+state and transactions.
+
+## Branch Flow
+
+Use the branch topology in `GIT-FLOW.md`:
+
+```text
+main
+  develop
+    codex/<issue-id>-<slug>
+```
+
+Issue branches target `develop`. Promote `develop` to `main` only when a
+coherent reviewed vertical is ready.
+
+## Recursive Issue Loop
+
+Use this loop for every non-trivial issue:
+
+```text
+governing laws and tests
+  -> behavioral law cards
+    -> tests-before-source dry run
+      -> target public interface and split decision
+        -> focused target tests
+          -> focused target-red evidence
+            -> smallest coherent implementation
+              -> focused and affected validation
+                -> skeptical review
+                  -> decision log
+                    -> dependent handoff
+```
+
+Split an issue when it changes multiple public concepts, has unrelated test
+groups, needs more than one decision log, or cannot be reviewed while holding
+a small amount of state. Do not begin a dependent child before its predecessor
+is accepted.
+
+Tests must fail for missing behavior, not broken imports, collection, fixtures,
+or Docker setup. Do not weaken assertions, hide collection, add `xfail`, point
+tests at another implementation, or use skips to manufacture green evidence.
+
+## Package Ownership
+
+The dependency direction is one-way:
+
+```text
+control-plane-kit-server-sdk -> pinned control-plane-kit-core
+```
+
+The base distribution remains framework-neutral. It must not depend on or
+import control-plane operations, cpk-server, server products, Docker or
+Cloudflare clients, Postgres stores, secret providers, or FastAPI.
+
+The public extension model is exactly one
+`ControlPlaneVariable[ReadResult, Command, TransitionResult]` protocol over accepted core
+contracts. Do not introduce a second handler, plugin, reflection, arbitrary
+method-call, URL, HTTP-body, or free-form mutation system.
+
+Process-local implementations must say that they are not durable. Domain-owned
+implementations retain their own UnitOfWork, ledger, replay, and transaction
+semantics. Issue #1150 owns replay, cache, ledger, and idempotency-key
+interpretation. Framework adapters, grant verification, and route accrual
+belong to their named later issues. `coordination/foundation.json` is
+historical genesis metadata, not a live coordination ledger.
+
+Workload verifier public-key configuration is supplied process-local state. It
+may retain bounded exact core `DelegationPublicKey` values for later signature
+verification, but it does not prove producer provenance, graph admission,
+issuer, audience, lifecycle status, authorization, or restart reconstruction.
+Public PEM is non-secret but integrity-sensitive and remains absent from
+routine representations and diagnostics.
+
+## Testing
+
+Use Docker-first validation and the Python standard-library `unittest`
+framework. Do not use host Python, pytest, `xfail`, hidden collection, or
+unapproved skips.
+
+Before issue #1485 installs the canonical package gate, use only the direct
+focused Docker command named by the child dry run. Do not add a provisional
+`test.sh`, Dockerfile, package-integrity framework, or workflow. After #1485,
+the checked-in `./test.sh` becomes the authoritative package gate.
+
+Test reports must distinguish focused, package, composition, source-live,
+published, and provider-mutating evidence. A green count does not make those
+proofs interchangeable.
+
+## Review And Decision Logs
+
+Every non-trivial pull request receives a skeptical review for correctness,
+public API clarity, package boundaries, tests, security, secret redaction,
+runtime cleanup, descriptor stability, and dependent handoff.
+
+Record a concise decision log containing:
+
+- chosen shape and important snippets;
+- why it was chosen and alternatives rejected;
+- target-red and exact-head green evidence;
+- security and operational notes;
+- residual risks; and
+- the next issue handoff.
+
+Do not merge merely because checks are absent or delayed. Exact-head checks,
+review, and the issue acceptance gate must be terminal.
+
+## Security
+
+Every issue, pull request, and handoff includes an explicit security note, even
+when no new security surface exists.
+
+Repository artifacts, tests, logs, errors, examples, and descriptors must not
+contain credentials, private keys, secret values, compact grants, signatures,
+private endpoints, provider authority, or workflow tokens. Public verification
+material is non-secret but integrity-sensitive and must still be bounded and
+redacted from routine representations.
+
+Authentication, authorization, graph admission, provenance, replay, network
+exposure, and mutation authority must be explicit. Public package status,
+private Docker networking, lexical validation, or route reachability is never
+proof of authority.
+
+## Docker Cleanup
+
+Never use broad Docker prune. Inspect resources before and after Docker work,
+remove only exact package-owned containers, networks, images, and volumes, and
+preserve unrelated resources and all Pottery Factory resources.
+
+## Handoffs
+
+Leave a concrete handoff when a child changes what its dependent needs to know:
+accepted coordinates, files and public decisions, tests, security assumptions,
+remaining risks, and the next exact base.
