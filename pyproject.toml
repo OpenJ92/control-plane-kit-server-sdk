@@ -17,6 +17,11 @@ verification = [
   "PyJWT==2.13.0",
   "cryptography==50.0.0",
 ]
+fastapi = [
+  "PyJWT==2.13.0",
+  "cryptography==50.0.0",
+  "fastapi==0.141.1",
+]
 
 [project.urls]
 Repository = "https://github.com/OpenJ92/control-plane-kit-server-sdk"

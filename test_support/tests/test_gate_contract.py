@@ -57,7 +57,7 @@ class PackageGateContractTests(unittest.TestCase):
             if "CORE_MOUNT_ARGS[@]" in line
         ]
 
-        self.assertEqual(mount_lines, [portable_expansion, portable_expansion])
+        self.assertEqual(mount_lines, [portable_expansion] * 3)
         script = (
             "set -u; "
             "CORE_MOUNT_ARGS=(); "
