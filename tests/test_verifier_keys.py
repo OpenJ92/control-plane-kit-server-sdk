@@ -14,6 +14,10 @@ from control_plane_kit_core import (
     DelegationKeyPurpose,
     DelegationPublicKey,
 )
+from control_plane_kit_server_sdk.verifier_keys import (
+    AtomicWorkloadNodeControlVerifierKeySet,
+    WorkloadNodeControlVerifierKeySet,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]

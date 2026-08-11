@@ -76,6 +76,65 @@ class WorkloadNodeControlVerifierKeySet:
         object.__setattr__(self, "public_keys", ordered)
 
 
+@dataclass(frozen=True, slots=True)
+class WorkloadNodeControlSurfaceReadVerifierKeySet:
+    """One complete supplied snapshot of surface-read verification keys."""
+
+    purpose: DelegationKeyPurpose
+    public_keys: tuple[DelegationPublicKey, ...] = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if type(self.purpose) is not DelegationKeyPurpose:
+            raise TypeError(
+                "surface-read verifier key set purpose must be DelegationKeyPurpose"
+            )
+        if (
+            self.purpose
+            is not DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ
+        ):
+            raise ValueError(
+                "surface-read verifier key set purpose must be "
+                "workload-node-control-surface-read"
+            )
+        if type(self.public_keys) is not tuple:
+            raise TypeError("surface-read verifier public_keys must be a tuple")
+        if not 1 <= len(self.public_keys) <= _MAX_PUBLIC_KEYS:
+            raise ValueError(
+                "surface-read verifier key set must contain one to sixteen keys"
+            )
+        if any(type(key) is not DelegationPublicKey for key in self.public_keys):
+            raise TypeError(
+                "surface-read verifier keys must be exact DelegationPublicKey values"
+            )
+        if any(not _has_exact_public_key_shape(key) for key in self.public_keys):
+            raise TypeError(
+                "surface-read verifier public key must be an admitted exact "
+                "DelegationPublicKey"
+            )
+        if any(
+            type(key.key_id) is not str
+            or type(key.algorithm) is not DelegationKeyAlgorithm
+            or type(key.public_key_pem) is not str
+            or type(key.fingerprint_sha256) is not str
+            for key in self.public_keys
+        ):
+            raise TypeError(
+                "surface-read verifier public key fields must use exact core types"
+            )
+        if any(not _is_canonical_public_key(key) for key in self.public_keys):
+            raise TypeError(
+                "surface-read verifier public key must be an admitted exact "
+                "DelegationPublicKey"
+            )
+
+        ordered = tuple(sorted(self.public_keys, key=lambda key: key.key_id))
+        if len({key.key_id for key in ordered}) != len(ordered):
+            raise ValueError("surface-read verifier key ids must be unique")
+        if len({key.fingerprint_sha256 for key in ordered}) != len(ordered):
+            raise ValueError("surface-read verifier key fingerprints must be unique")
+        object.__setattr__(self, "public_keys", ordered)
+
+
 def _has_exact_public_key_shape(key: DelegationPublicKey) -> bool:
     namespace = key.__dict__
     if type(namespace) is not dict:
@@ -137,7 +196,45 @@ class AtomicWorkloadNodeControlVerifierKeySet:
             )
 
 
+class AtomicWorkloadNodeControlSurfaceReadVerifierKeySet:
+    """Atomically publish one complete surface-read key-set snapshot."""
+
+    __slots__ = ("_lock", "_snapshot")
+
+    def __init__(
+        self,
+        initial: WorkloadNodeControlSurfaceReadVerifierKeySet,
+    ) -> None:
+        self._require_key_set(initial)
+        self._lock = Lock()
+        self._snapshot = initial
+
+    def snapshot(self) -> WorkloadNodeControlSurfaceReadVerifierKeySet:
+        with self._lock:
+            snapshot = self._snapshot
+        return snapshot
+
+    def replace(
+        self,
+        candidate: WorkloadNodeControlSurfaceReadVerifierKeySet,
+    ) -> WorkloadNodeControlSurfaceReadVerifierKeySet:
+        self._require_key_set(candidate)
+        with self._lock:
+            self._snapshot = candidate
+        return candidate
+
+    @staticmethod
+    def _require_key_set(candidate: object) -> None:
+        if type(candidate) is not WorkloadNodeControlSurfaceReadVerifierKeySet:
+            raise TypeError(
+                "atomic surface-read verifier key set must be "
+                "WorkloadNodeControlSurfaceReadVerifierKeySet"
+            )
+
+
 __all__ = [
+    "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
+    "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
 ]

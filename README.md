@@ -16,7 +16,7 @@ python -m pip install .
 
 It is not published to a package index. The base dependency is the immutable
 `control-plane-kit-core` source at
-`3d85dc76300bf88be923531445ce83e9b6c7b23e`; installing from a clean checkout
+`0ee72c3fcdfbee5094357152bdf070fbfc53393c`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
 Signature-verification dependencies are isolated in one exact optional extra:
@@ -149,6 +149,35 @@ coordinator per application or route set, preserve admission before replay,
 and run the whole call on a worker thread rather than blocking an event loop.
 It adds no public SDK export, authentication claim, graph authority, provider
 effect, or persistence boundary.
+
+Surface-read authority uses a separate process-local public verification
+material lane. `WorkloadNodeControlSurfaceReadVerifierKeySet` accepts only the
+`WORKLOAD_NODE_CONTROL_SURFACE_READ` purpose, and its atomic holder never
+substitutes for the command holder. Consumers import the optional verifier
+directly:
+
+```python
+from control_plane_kit_server_sdk.verification import (
+    Ed25519WorkloadNodeControlSurfaceReadVerifier,
+)
+
+request = verifier.admit(
+    credential,
+    route_kind=kind,
+    candidate=None,
+)
+```
+
+The compact type is exactly
+`CPK-WORKLOAD-NODE-CONTROL-SURFACE-READ+JWT`, and its signed payload member is
+`workload_node_control_surface_read`. Credentials are bounded to 4,096 bytes;
+the protected header, payload, and signature segments are bounded to 512,
+3,840, and 128 bytes. Admission returns one exact core surface-read request.
+It is stateless: the same valid credential may be admitted again during its
+bounded lifetime. The verifier owns no private key, no HTTP framing, no
+registry lookup, no registry state, no result construction, and no replay
+store. Issue #1507 owns
+the HTTP adapter, live surface registry, and execution of the admitted read.
 
 ## Validation
 

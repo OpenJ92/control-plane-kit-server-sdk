@@ -12,6 +12,8 @@ import jwt
 from control_plane_kit_core import (
     DelegatedWorkloadNodeControlGrant,
     DelegatedWorkloadNodeControlGrantCodec,
+    DelegatedWorkloadNodeControlSurfaceReadGrant,
+    DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
     NodeControlCommandRequest,
@@ -19,20 +21,32 @@ from control_plane_kit_core import (
     NodeControlGraphReference,
     NodeControlGraphReferenceRole,
     NodeControlOperation,
+    NodeControlSurfaceReadKind,
+    NodeControlSurfaceReadRequest,
+    verify_workload_node_control_surface_read_grant,
     verify_workload_node_control_grant,
 )
 from control_plane_kit_server_sdk.verifier_keys import (
+    AtomicWorkloadNodeControlSurfaceReadVerifierKeySet,
     AtomicWorkloadNodeControlVerifierKeySet,
 )
 
 
 _TOKEN_TYPE = "CPK-WORKLOAD-NODE-CONTROL+JWT"
 _ERROR_MESSAGE = "workload node-control credential was rejected"
+_SURFACE_TOKEN_TYPE = "CPK-WORKLOAD-NODE-CONTROL-SURFACE-READ+JWT"
+_SURFACE_ERROR_MESSAGE = (
+    "workload node-control surface-read credential was rejected"
+)
 _MAX_CREDENTIAL_BYTES = 12_288
 _MAX_HEADER_SEGMENT_BYTES = 1_024
 _MAX_PAYLOAD_SEGMENT_BYTES = 8_192
 _MAX_SIGNATURE_SEGMENT_BYTES = 1_024
 _MAX_CANDIDATE_BYTES = 16_384
+_MAX_SURFACE_CREDENTIAL_BYTES = 4_096
+_MAX_SURFACE_HEADER_SEGMENT_BYTES = 512
+_MAX_SURFACE_PAYLOAD_SEGMENT_BYTES = 3_840
+_MAX_SURFACE_SIGNATURE_SEGMENT_BYTES = 128
 _MAX_STRUCTURAL_JSON_DEPTH = 16
 _MAX_STRUCTURAL_JSON_MEMBERS = 64
 _MAX_SAFE_INTEGER = 2**53 - 1
@@ -64,6 +78,51 @@ _GRANT_KEYS = frozenset(
 _TARGET_KEYS = frozenset(
     {"workspace_id", "graph_revision", "node_id", "provider_socket_name"}
 )
+_SURFACE_PAYLOAD_KEYS = frozenset(
+    {
+        "iss",
+        "aud",
+        "iat",
+        "nbf",
+        "exp",
+        "jti",
+        "workload_node_control_surface_read",
+    }
+)
+_SURFACE_GRANT_KEYS = frozenset(
+    {
+        "profile",
+        "canonicalization",
+        "purpose",
+        "issuer",
+        "key_id",
+        "audience",
+        "target",
+        "kind",
+        "declaration_identity",
+        "request_id",
+        "request_digest",
+        "issued_at",
+        "not_before",
+        "expires_at",
+        "jti",
+    }
+)
+_SURFACE_GRANT_TEXT_KEYS = frozenset(
+    {
+        "profile",
+        "canonicalization",
+        "purpose",
+        "issuer",
+        "key_id",
+        "audience",
+        "kind",
+        "declaration_identity",
+        "request_id",
+        "request_digest",
+        "jti",
+    }
+)
 _GRANT_TEXT_KEYS = frozenset(
     {
         "issuer",
@@ -81,6 +140,12 @@ _GRANT_TEXT_KEYS = frozenset(
 
 class WorkloadNodeControlVerificationError(ValueError):
     """Bounded rejection for every credential-admission failure."""
+
+    __slots__ = ()
+
+
+class WorkloadNodeControlSurfaceReadVerificationError(ValueError):
+    """Bounded rejection for every signed surface-read admission failure."""
 
     __slots__ = ()
 
@@ -232,6 +297,137 @@ class Ed25519WorkloadNodeControlVerifier:
         return request
 
 
+class Ed25519WorkloadNodeControlSurfaceReadVerifier:
+    """Admit one exact signed surface-read request without retaining state."""
+
+    __slots__ = ("_holder", "_expected_issuer", "_expected_audience", "_clock")
+
+    def __init__(
+        self,
+        holder: AtomicWorkloadNodeControlSurfaceReadVerifierKeySet,
+        *,
+        expected_issuer: str,
+        expected_audience: str,
+        clock: Callable[[], int],
+    ) -> None:
+        if type(holder) is not AtomicWorkloadNodeControlSurfaceReadVerifierKeySet:
+            raise TypeError("surface-read verifier holder is invalid")
+        _require_reference(expected_issuer)
+        _require_reference(expected_audience)
+        if not callable(clock):
+            raise TypeError("surface-read verifier clock is invalid")
+        self._holder = holder
+        self._expected_issuer = expected_issuer
+        self._expected_audience = expected_audience
+        self._clock = clock
+
+    def __repr__(self) -> str:
+        return "Ed25519WorkloadNodeControlSurfaceReadVerifier()"
+
+    def admit(
+        self,
+        credential: bytes,
+        *,
+        route_kind: NodeControlSurfaceReadKind,
+        candidate: None,
+    ) -> NodeControlSurfaceReadRequest:
+        try:
+            return self._admit(
+                credential,
+                route_kind=route_kind,
+                candidate=candidate,
+            )
+        except Exception:
+            pass
+        raise WorkloadNodeControlSurfaceReadVerificationError(
+            _SURFACE_ERROR_MESSAGE
+        )
+
+    def _admit(
+        self,
+        credential: bytes,
+        *,
+        route_kind: NodeControlSurfaceReadKind,
+        candidate: None,
+    ) -> NodeControlSurfaceReadRequest:
+        if (
+            type(route_kind) is not NodeControlSurfaceReadKind
+            or candidate is not None
+        ):
+            raise TypeError
+
+        header_bytes, payload_bytes, _signature_bytes = _decode_surface_compact(
+            credential
+        )
+        header = _decode_structural_json(header_bytes)
+        payload = _decode_structural_json(payload_bytes)
+        _require_surface_header_profile(header)
+        _require_surface_payload_profile(payload)
+        key_id = header["kid"]
+
+        snapshot = self._holder.snapshot()
+        if (
+            type(snapshot.purpose) is not DelegationKeyPurpose
+            or snapshot.purpose
+            is not DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ
+        ):
+            raise ValueError
+        selected = tuple(
+            key for key in snapshot.public_keys if key.key_id == key_id
+        )
+        if len(selected) != 1:
+            raise ValueError
+        public_key = selected[0]
+        if public_key.algorithm is not DelegationKeyAlgorithm.ED25519:
+            raise ValueError
+
+        del header, payload, header_bytes, payload_bytes
+        claims = jwt.decode(
+            credential,
+            public_key.public_key_pem,
+            algorithms=["EdDSA"],
+            issuer=self._expected_issuer,
+            audience=self._expected_audience,
+            options={
+                "require": ["iss", "aud", "iat", "nbf", "exp", "jti"],
+                "verify_exp": False,
+                "verify_nbf": False,
+                "verify_iat": False,
+                "strict_aud": True,
+            },
+        )
+        claims = _walk_structural_json(claims)
+        _require_surface_payload_profile(claims)
+        grant_descriptor = claims["workload_node_control_surface_read"]
+        grant = DelegatedWorkloadNodeControlSurfaceReadGrantCodec().decode(
+            grant_descriptor
+        )
+        _require_surface_outer_grant_congruence(claims, key_id, grant)
+
+        now = self._clock()
+        if type(now) is not int or not 0 <= now <= _MAX_SAFE_INTEGER:
+            raise ValueError
+        request = NodeControlSurfaceReadRequest(
+            target=grant.target,
+            kind=grant.kind,
+            declaration_identity=grant.declaration_identity,
+            request_id=grant.request_id,
+        )
+        if grant.kind is not route_kind:
+            raise ValueError
+        result = verify_workload_node_control_surface_read_grant(
+            grant,
+            request,
+            expected_issuer=self._expected_issuer,
+            expected_key_id=key_id,
+            expected_audience=self._expected_audience,
+            now=now,
+        )
+        if not result.is_accepted:
+            raise ValueError
+        return request
+
+
 def _require_reference(value: object) -> None:
     if type(value) is not str or not _REFERENCE.fullmatch(value):
         raise ValueError("workload verifier reference is invalid")
@@ -248,6 +444,39 @@ def _decode_compact(credential: object) -> tuple[bytes, bytes, bytes]:
         _MAX_HEADER_SEGMENT_BYTES,
         _MAX_PAYLOAD_SEGMENT_BYTES,
         _MAX_SIGNATURE_SEGMENT_BYTES,
+    )
+    decoded: list[bytes] = []
+    for segment, maximum in zip(segments, bounds, strict=True):
+        if (
+            not 1 <= len(segment) <= maximum
+            or _BASE64URL.fullmatch(segment) is None
+        ):
+            raise ValueError
+        value = base64.b64decode(
+            segment + b"=" * (-len(segment) % 4),
+            altchars=b"-_",
+            validate=True,
+        )
+        if base64.urlsafe_b64encode(value).rstrip(b"=") != segment:
+            raise ValueError
+        decoded.append(value)
+    return decoded[0], decoded[1], decoded[2]
+
+
+def _decode_surface_compact(credential: object) -> tuple[bytes, bytes, bytes]:
+    if (
+        type(credential) is not bytes
+        or not 1 <= len(credential) <= _MAX_SURFACE_CREDENTIAL_BYTES
+    ):
+        raise TypeError
+    credential.decode("ascii")
+    segments = credential.split(b".")
+    if len(segments) != 3:
+        raise ValueError
+    bounds = (
+        _MAX_SURFACE_HEADER_SEGMENT_BYTES,
+        _MAX_SURFACE_PAYLOAD_SEGMENT_BYTES,
+        _MAX_SURFACE_SIGNATURE_SEGMENT_BYTES,
     )
     decoded: list[bytes] = []
     for segment, maximum in zip(segments, bounds, strict=True):
@@ -320,6 +549,15 @@ def _require_header_profile(value: object) -> None:
         raise ValueError
 
 
+def _require_surface_header_profile(value: object) -> None:
+    if type(value) is not dict or frozenset(value) != _HEADER_KEYS:
+        raise ValueError
+    if any(type(value[key]) is not str for key in _HEADER_KEYS):
+        raise TypeError
+    if value["alg"] != "EdDSA" or value["typ"] != _SURFACE_TOKEN_TYPE:
+        raise ValueError
+
+
 def _require_payload_profile(value: object) -> None:
     if type(value) is not dict or frozenset(value) != _PAYLOAD_KEYS:
         raise ValueError
@@ -335,6 +573,30 @@ def _require_payload_profile(value: object) -> None:
     if grant["command_codec"] is not None and type(grant["command_codec"]) is not str:
         raise TypeError
     if any(type(grant[key]) is not int for key in ("issued_at", "not_before", "expires_at")):
+        raise TypeError
+    target = grant["target"]
+    if type(target) is not dict or frozenset(target) != _TARGET_KEYS:
+        raise ValueError
+    if any(type(target[key]) is not str for key in _TARGET_KEYS):
+        raise TypeError
+
+
+def _require_surface_payload_profile(value: object) -> None:
+    if type(value) is not dict or frozenset(value) != _SURFACE_PAYLOAD_KEYS:
+        raise ValueError
+    if any(type(value[key]) is not str for key in ("iss", "aud", "jti")):
+        raise TypeError
+    if any(type(value[key]) is not int for key in ("iat", "nbf", "exp")):
+        raise TypeError
+    grant = value["workload_node_control_surface_read"]
+    if type(grant) is not dict or frozenset(grant) != _SURFACE_GRANT_KEYS:
+        raise ValueError
+    if any(type(grant[key]) is not str for key in _SURFACE_GRANT_TEXT_KEYS):
+        raise TypeError
+    if any(
+        type(grant[key]) is not int
+        for key in ("issued_at", "not_before", "expires_at")
+    ):
         raise TypeError
     target = grant["target"]
     if type(target) is not dict or frozenset(target) != _TARGET_KEYS:
@@ -361,7 +623,27 @@ def _require_outer_grant_congruence(
         raise ValueError
 
 
+def _require_surface_outer_grant_congruence(
+    claims: dict[str, object],
+    header_key_id: str,
+    grant: DelegatedWorkloadNodeControlSurfaceReadGrant,
+) -> None:
+    if (
+        type(header_key_id) is not str
+        or header_key_id != grant.key_id
+        or claims["iss"] != grant.issuer
+        or claims["aud"] != grant.audience
+        or claims["iat"] != grant.issued_at
+        or claims["nbf"] != grant.not_before
+        or claims["exp"] != grant.expires_at
+        or claims["jti"] != grant.jti
+    ):
+        raise ValueError
+
+
 __all__ = [
+    "Ed25519WorkloadNodeControlSurfaceReadVerifier",
     "Ed25519WorkloadNodeControlVerifier",
+    "WorkloadNodeControlSurfaceReadVerificationError",
     "WorkloadNodeControlVerificationError",
 ]

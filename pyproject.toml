@@ -9,7 +9,7 @@ description = "Framework-neutral workload node-control SDK for Control Plane Kit
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "control-plane-kit-core @ https://github.com/OpenJ92/control-plane-kit/archive/3d85dc76300bf88be923531445ce83e9b6c7b23e.zip#subdirectory=control-plane-kit-core",
+  "control-plane-kit-core @ https://github.com/OpenJ92/control-plane-kit/archive/0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip#subdirectory=control-plane-kit-core",
 ]
 
 [project.optional-dependencies]
