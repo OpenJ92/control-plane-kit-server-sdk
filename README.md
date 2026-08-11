@@ -31,6 +31,21 @@ dependency availability only; #1498 owns the closed signed-grant verifier.
 These exact pins constrain the two named direct dependencies only.
 They do not lock transitive dependency versions, artifact hashes, or publisher attestations.
 
+FastAPI applications may install the private adapter dependency set with:
+
+```bash
+python -m pip install ".[fastapi]"
+```
+
+That extra contains the same verification pair plus `fastapi==0.141.1`. It
+supports the internal authenticated variable routes implemented by #1551. The
+SDK root remains lazy and framework-neutral; #1552 owns the one public installer
+that will compose variable routes with stateless capability and status reads.
+Authenticated APPLY invokes the caller-supplied variable and can mutate
+process-local or durable workload-owned state. The SDK adapter owns no storage,
+transaction, graph authority, or provider client; #1506 replay remains its
+accepted cancellation, retry, and convergence boundary.
+
 The root import exposes one neutral invocation value:
 
 ```python
@@ -144,11 +159,11 @@ entry, retains published terminals for exactly 300 seconds, and never prunes an
 in-flight reservation. It is not durable: restart loses all entries, while
 domain-owned durable variables retain their own ledger and transaction truth.
 
-The coordinator is synchronous. The later #1507 route adapter must install one
-coordinator per application or route set, preserve admission before replay,
-and run the whole call on a worker thread rather than blocking an event loop.
-It adds no public SDK export, authentication claim, graph authority, provider
-effect, or persistence boundary.
+The coordinator is synchronous. The private #1551 FastAPI interpreter receives
+one coordinator per application or route set, preserves admission and exact
+target binding before replay, and runs interpretation through one worker-thread
+handoff rather than blocking an event loop. It adds no public SDK export,
+authentication claim, graph authority, provider effect, or persistence boundary.
 
 Surface-read authority uses a separate process-local public verification
 material lane. `WorkloadNodeControlSurfaceReadVerifierKeySet` accepts only the
@@ -193,12 +208,13 @@ Run the authoritative Docker-first package gate with:
 The default gate is pinned package evidence. Before package build or dependency
 resolution, a structured TOML preflight requires `project.dependencies` to be
 the exact one-element immutable core coordinate and
-`project.optional-dependencies` to be the exact one-element `verification`
+`project.optional-dependencies` to be the exact `verification` and `fastapi`
 map declared in `pyproject.toml`. The gate then checks package integrity and
-builds once. A base container proves the SDK without optional dependencies;
-a separate verification container installs `.[verification]`, reruns the
-package tests, and proves exact installed versions and SDK-root import
-laziness. Both containers and the image have process-scoped names and cleanup.
+builds once. A base container proves the SDK without optional dependencies; a
+verification container proves `.[verification]`; and a FastAPI container
+installs `.[fastapi]`, runs the complete suite, and proves exact installed
+versions plus SDK-root import laziness. All containers and the image have
+process-scoped names and cleanup.
 
 Coordinated source development may explicitly replace only the core dependency:
 
@@ -214,4 +230,5 @@ checkout. Merely having a sibling checkout does not change what is tested.
 
 The repository does not own control-plane operations stores, cpk-server,
 Docker interpreters, server products, provider clients, or application state.
-FastAPI support is a later optional adapter rather than a base dependency.
+FastAPI support is an optional private adapter rather than a base dependency;
+#1552 owns its final public composition API.

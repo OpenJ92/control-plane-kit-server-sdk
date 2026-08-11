@@ -8,3 +8,4 @@ dist
 *.egg-info
 test_support/*
 !test_support/installed_verification_dependencies.py
+!test_support/installed_fastapi_dependencies.py

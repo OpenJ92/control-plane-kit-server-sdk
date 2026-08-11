@@ -20,5 +20,6 @@ FROM package AS test
 
 COPY tests ./tests
 COPY test_support/installed_verification_dependencies.py ./test_support/
+COPY test_support/installed_fastapi_dependencies.py ./test_support/
 
 CMD ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]

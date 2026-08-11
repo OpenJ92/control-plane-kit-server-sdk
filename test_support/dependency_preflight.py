@@ -16,8 +16,13 @@ ACCEPTED_VERIFICATION_DEPENDENCIES = [
     "PyJWT==2.13.0",
     "cryptography==50.0.0",
 ]
+ACCEPTED_FASTAPI_DEPENDENCIES = [
+    *ACCEPTED_VERIFICATION_DEPENDENCIES,
+    "fastapi==0.141.1",
+]
 ACCEPTED_OPTIONAL_DEPENDENCIES = {
     "verification": ACCEPTED_VERIFICATION_DEPENDENCIES,
+    "fastapi": ACCEPTED_FASTAPI_DEPENDENCIES,
 }
 
 
@@ -63,6 +68,7 @@ def main() -> int:
         f"sha={ACCEPTED_CORE_SHA} "
         "subdirectory=control-plane-kit-core "
         "verification=PyJWT==2.13.0,cryptography==50.0.0"
+        " fastapi=PyJWT==2.13.0,cryptography==50.0.0,fastapi==0.141.1"
     )
     return 0
 

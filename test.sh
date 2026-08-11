@@ -5,6 +5,7 @@ RUN_ID="$$"
 IMAGE_NAME="control-plane-kit-server-sdk-test:${RUN_ID}"
 BASE_CONTAINER_NAME="cpk-server-sdk-base-${RUN_ID}"
 VERIFICATION_CONTAINER_NAME="cpk-server-sdk-verification-${RUN_ID}"
+FASTAPI_CONTAINER_NAME="cpk-server-sdk-fastapi-${RUN_ID}"
 POLICY_IMAGE="python:3.14-slim"
 DEPENDENCY_MODE="${CPK_SERVER_SDK_DEPENDENCY_MODE:-pinned}"
 CORE_REPO="${CPK_CORE_REPO:-}"
@@ -15,6 +16,7 @@ cd "$ROOT"
 cleanup() {
   docker rm -f "$BASE_CONTAINER_NAME" >/dev/null 2>&1 || true
   docker rm -f "$VERIFICATION_CONTAINER_NAME" >/dev/null 2>&1 || true
+  docker rm -f "$FASTAPI_CONTAINER_NAME" >/dev/null 2>&1 || true
   docker image rm -f "$IMAGE_NAME" >/dev/null 2>&1 || true
 }
 
@@ -111,9 +113,30 @@ docker run \
     else
       python -m pip install --force-reinstall ".[verification]"
     fi
+    cd /tmp
+    python /test-support/installed_import.py
+    python /test-support/installed_verification_dependencies.py
+  '
+
+echo "phase=fastapi-extra-install"
+docker run \
+  --name "$FASTAPI_CONTAINER_NAME" \
+  -v "$ROOT/test_support:/test-support:ro" \
+  ${CORE_MOUNT_ARGS[@]+"${CORE_MOUNT_ARGS[@]}"} \
+  -e "CPK_TEST_DEPENDENCY_MODE=$DEPENDENCY_MODE" \
+  "$IMAGE_NAME" \
+  sh -ceu '
+    if [ "$CPK_TEST_DEPENDENCY_MODE" = "local-core" ]; then
+      cp -R /workspace/control-plane-kit/control-plane-kit-core /tmp/control-plane-kit-core
+      python -m pip install /tmp/control-plane-kit-core
+      python -m pip install "PyJWT==2.13.0" "cryptography==50.0.0" "fastapi==0.141.1"
+      python -m pip install --no-deps --force-reinstall ".[fastapi]"
+    else
+      python -m pip install --force-reinstall ".[fastapi]"
+    fi
     python -m compileall src tests
     python -m unittest discover -s tests -v
     cd /tmp
     python /test-support/installed_import.py
-    python /test-support/installed_verification_dependencies.py
+    python /test-support/installed_fastapi_dependencies.py
   '

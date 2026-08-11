@@ -57,7 +57,7 @@ class PackageGateContractTests(unittest.TestCase):
             if "CORE_MOUNT_ARGS[@]" in line
         ]
 
-        self.assertEqual(mount_lines, [portable_expansion, portable_expansion])
+        self.assertEqual(mount_lines, [portable_expansion] * 3)
         script = (
             "set -u; "
             "CORE_MOUNT_ARGS=(); "
@@ -102,9 +102,12 @@ class PackageGateContractTests(unittest.TestCase):
             "python /test-support/installed_import.py",
             "phase=verification-extra-install",
             ".[verification]",
+            "python /test-support/installed_verification_dependencies.py",
+            "phase=fastapi-extra-install",
+            ".[fastapi]",
             "python -m compileall src tests",
             "python -m unittest discover -s tests -v",
-            "python /test-support/installed_verification_dependencies.py",
+            "python /test-support/installed_fastapi_dependencies.py",
         )
         offsets: list[int] = []
         start = 0
@@ -144,8 +147,13 @@ class PackageGateContractTests(unittest.TestCase):
             'VERIFICATION_CONTAINER_NAME="cpk-server-sdk-verification-${RUN_ID}"',
             source,
         )
+        self.assertIn(
+            'FASTAPI_CONTAINER_NAME="cpk-server-sdk-fastapi-${RUN_ID}"',
+            source,
+        )
         self.assertIn('docker rm -f "$BASE_CONTAINER_NAME"', source)
         self.assertIn('docker rm -f "$VERIFICATION_CONTAINER_NAME"', source)
+        self.assertIn('docker rm -f "$FASTAPI_CONTAINER_NAME"', source)
         self.assertIn('docker image rm -f "$IMAGE_NAME"', source)
         self.assertNotIn("docker system prune", source)
         self.assertNotIn("docker container prune", source)
@@ -171,6 +179,11 @@ class PackageGateContractTests(unittest.TestCase):
             "./test_support/",
             source,
         )
+        self.assertIn(
+            "COPY test_support/installed_fastapi_dependencies.py "
+            "./test_support/",
+            source,
+        )
         self.assertNotIn("pytest", source)
         self.assertTrue(
             {
@@ -184,19 +197,20 @@ class PackageGateContractTests(unittest.TestCase):
                 "*.egg-info",
                 "test_support/*",
                 "!test_support/installed_verification_dependencies.py",
+                "!test_support/installed_fastapi_dependencies.py",
             }.issubset(ignored)
         )
 
     def test_each_package_run_fails_fast_before_import_smoke(self) -> None:
         source = self._read("test.sh")
 
-        self.assertEqual(source.count("sh -ceu '"), 2)
+        self.assertEqual(source.count("sh -ceu '"), 3)
 
     def test_installed_import_proves_context_and_forbidden_dependencies(self) -> None:
         gate = self._read("test.sh")
         source = self._read("test_support/installed_import.py")
 
-        self.assertEqual(gate.count("python /test-support/installed_import.py"), 2)
+        self.assertEqual(gate.count("python /test-support/installed_import.py"), 3)
         for expected in (
             "control_plane_kit_server_sdk.__version__",
             "ControlPlaneInvocationContext",
@@ -238,6 +252,121 @@ class PackageGateContractTests(unittest.TestCase):
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, source)
+
+    def test_installed_fastapi_probe_is_exact_and_root_lazy(self) -> None:
+        gate = self._read("test.sh")
+        source = self._read("test_support/installed_fastapi_dependencies.py")
+
+        self.assertIn(
+            "python /test-support/installed_fastapi_dependencies.py",
+            gate,
+        )
+        for expected in (
+            'version("PyJWT")',
+            'version("cryptography")',
+            'version("fastapi")',
+            '"2.13.0"',
+            '"50.0.0"',
+            '"0.141.1"',
+            "import control_plane_kit_server_sdk",
+            '"fastapi" not in sys.modules',
+            '"starlette" not in sys.modules',
+            '"anyio" not in sys.modules',
+            '"jwt" not in sys.modules',
+            '"cryptography" not in sys.modules',
+            "import control_plane_kit_server_sdk._fastapi_variable_routes",
+            "fastapi dependencies import ok",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, source)
+
+    def test_installed_fastapi_probe_executes_exact_version_contract(self) -> None:
+        cases = (
+            ("accepted", "2.13.0", "50.0.0", "0.141.1", True),
+            ("wrong-pyjwt", "2.12.0", "50.0.0", "0.141.1", False),
+            ("wrong-cryptography", "2.13.0", "49.0.0", "0.141.1", False),
+            ("wrong-fastapi", "2.13.0", "50.0.0", "0.140.0", False),
+        )
+        for (
+            identity,
+            pyjwt_version,
+            cryptography_version,
+            fastapi_version,
+            accepted,
+        ) in cases:
+            with self.subTest(identity=identity):
+                completed, events, temporary_root = self._run_fastapi_probe(
+                    pyjwt_version=pyjwt_version,
+                    cryptography_version=cryptography_version,
+                    fastapi_version=fastapi_version,
+                )
+                if accepted:
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(
+                        completed.stdout,
+                        "fastapi dependencies import ok\n",
+                    )
+                    self.assertEqual(completed.stderr, "")
+                    self.assertEqual(
+                        events,
+                        "sdk\nfastapi\nstarlette\nanyio\njwt\ncryptography\nadapter\n",
+                    )
+                else:
+                    self.assertEqual(completed.returncode, 2)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(
+                        completed.stderr,
+                        "fastapi dependencies are not accepted\n",
+                    )
+                    self.assertLessEqual(len(completed.stderr.encode("utf-8")), 128)
+                    self.assertEqual(events, "sdk\n")
+                    for excluded in (
+                        pyjwt_version,
+                        cryptography_version,
+                        fastapi_version,
+                        str(temporary_root),
+                        "sensitive fake module material",
+                    ):
+                        with self.subTest(identity=identity, excluded=excluded):
+                            self.assertNotIn(
+                                excluded,
+                                completed.stdout + completed.stderr,
+                            )
+
+    def test_installed_fastapi_probe_bounds_metadata_backend_failure(self) -> None:
+        probe = self.root / "test_support" / "installed_fastapi_dependencies.py"
+        completed, events, temporary_root = self._run_fastapi_environment(
+            pyjwt_version="2.13.0",
+            cryptography_version="50.0.0",
+            fastapi_version="0.141.1",
+            arguments=(
+                sys.executable,
+                "-c",
+                "import importlib.metadata\n"
+                "import runpy\n"
+                "def fail_version(_name):\n"
+                "    raise RuntimeError('sensitive metadata backend failure')\n"
+                "importlib.metadata.version = fail_version\n"
+                f"runpy.run_path({str(probe)!r}, run_name='__main__')\n",
+            ),
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout, "")
+        self.assertEqual(
+            completed.stderr,
+            "fastapi dependencies are not accepted\n",
+        )
+        self.assertLessEqual(len(completed.stderr.encode("utf-8")), 128)
+        self.assertEqual(events, "sdk\n")
+        for excluded in (
+            "sensitive metadata backend failure",
+            "RuntimeError",
+            "Traceback",
+            str(temporary_root),
+        ):
+            with self.subTest(excluded=excluded):
+                self.assertNotIn(excluded, completed.stdout + completed.stderr)
 
     def test_installed_verification_probe_executes_exact_version_contract(self) -> None:
         cases = (
@@ -383,6 +512,121 @@ class PackageGateContractTests(unittest.TestCase):
                 ),
             ),
         )
+
+    def _run_fastapi_probe(
+        self,
+        *,
+        pyjwt_version: str,
+        cryptography_version: str,
+        fastapi_version: str,
+    ) -> tuple[subprocess.CompletedProcess[str], str, Path]:
+        return self._run_fastapi_environment(
+            pyjwt_version=pyjwt_version,
+            cryptography_version=cryptography_version,
+            fastapi_version=fastapi_version,
+            arguments=(
+                sys.executable,
+                str(
+                    self.root
+                    / "test_support"
+                    / "installed_fastapi_dependencies.py"
+                ),
+            ),
+        )
+
+    def _run_fastapi_environment(
+        self,
+        *,
+        pyjwt_version: str,
+        cryptography_version: str,
+        fastapi_version: str,
+        arguments: tuple[str, ...],
+    ) -> tuple[subprocess.CompletedProcess[str], str, Path]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            events = root / "events.log"
+            events.write_text("", encoding="utf-8")
+            self._write_fake_module(
+                root,
+                "control_plane_kit_server_sdk",
+                """
+import os
+from pathlib import Path
+import sys
+
+for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
+    if name in sys.modules:
+        raise RuntimeError("optional dependency loaded before SDK root")
+with Path(os.environ["CPK_FASTAPI_PROBE_EVENTS"]).open("a") as stream:
+    stream.write("sdk\\n")
+""",
+            )
+            (
+                root
+                / "control_plane_kit_server_sdk"
+                / "_fastapi_variable_routes.py"
+            ).write_text(
+                "import fastapi\n"
+                "import jwt\n"
+                "import cryptography\n"
+                "import os\n"
+                "from pathlib import Path\n"
+                "with Path(os.environ['CPK_FASTAPI_PROBE_EVENTS']).open('a') as stream:\n"
+                "    stream.write('adapter\\n')\n",
+                encoding="utf-8",
+            )
+            self._write_fake_module(
+                root,
+                "fastapi",
+                """
+import os
+from pathlib import Path
+import sys
+
+if "control_plane_kit_server_sdk" not in sys.modules:
+    raise RuntimeError("SDK root was not imported first")
+with Path(os.environ["CPK_FASTAPI_PROBE_EVENTS"]).open("a") as stream:
+    stream.write("fastapi\\n")
+import starlette
+import anyio
+""",
+            )
+            for name in ("starlette", "anyio", "jwt", "cryptography"):
+                self._write_fake_module(
+                    root,
+                    name,
+                    f"""
+import os
+from pathlib import Path
+with Path(os.environ["CPK_FASTAPI_PROBE_EVENTS"]).open("a") as stream:
+    stream.write("{name}\\n")
+SENSITIVE = "sensitive fake module material"
+""",
+                )
+            self._write_fake_distribution(root, "PyJWT", pyjwt_version)
+            self._write_fake_distribution(
+                root,
+                "cryptography",
+                cryptography_version,
+            )
+            self._write_fake_distribution(root, "fastapi", fastapi_version)
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "CPK_FASTAPI_PROBE_EVENTS": str(events),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONPATH": str(root),
+                }
+            )
+            completed = subprocess.run(
+                arguments,
+                cwd=root,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return completed, events.read_text(encoding="utf-8"), root
 
     def _run_verification_environment(
         self,
