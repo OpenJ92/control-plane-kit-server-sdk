@@ -398,7 +398,11 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
         }
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.glob("*.py")):
-            permitted = {"jwt"} if path.name == "verification.py" else set()
+            permitted: set[str] = set()
+            if path.name == "verification.py":
+                permitted.add("jwt")
+            if path.name == "_fastapi_variable_routes.py":
+                permitted.add("fastapi")
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
