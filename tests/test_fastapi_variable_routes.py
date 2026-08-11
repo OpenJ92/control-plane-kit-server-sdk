@@ -707,15 +707,19 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
             NodeControlFailed(apply.request_id, NodeControlOperation.READ_STATE),
         ):
             with self.subTest(apply_result=result):
-                self.assert_error(
-                    self._apply(
-                        self._app(
-                            RecordingVariable(_descriptor(), apply_result=result)
-                        ),
-                        apply,
+                status, content, body = self._apply(
+                    self._app(
+                        RecordingVariable(_descriptor(), apply_result=result)
                     ),
-                    500,
+                    apply,
                 )
+                expected = NodeControlFailed(
+                    apply.request_id,
+                    NodeControlOperation.APPLY_COMMAND,
+                ).descriptor()
+                self.assertEqual(status, 200)
+                self.assertEqual(content, expected)
+                self.assertEqual(body, _json_bytes(expected))
 
         class OversizedReadResult(NodeControlReadStateSucceeded):
             emit_oversized = False
