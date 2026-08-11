@@ -391,12 +391,15 @@ class RecordingClock:
         self.value = value
         self.calls = 0
         self.thread_ids: list[int] = []
+        self.second_call = Event()
         self._lock = Lock()
 
     def __call__(self) -> int:
         with self._lock:
             self.calls += 1
             self.thread_ids.append(get_ident())
+            if self.calls >= 2:
+                self.second_call.set()
         return self.value
 
 
@@ -436,12 +439,12 @@ class FastApiControlRouteTests(unittest.TestCase):
         )
         return importlib.import_module(MODULE_NAME)
 
-    def _command_verifier(self) -> Ed25519WorkloadNodeControlVerifier:
+    def _command_verifier(self, clock=None) -> Ed25519WorkloadNodeControlVerifier:
         return Ed25519WorkloadNodeControlVerifier(
             self.command_holder,
             expected_issuer=ISSUER,
             expected_audience=AUDIENCE,
-            clock=lambda: NOW,
+            clock=(lambda: NOW) if clock is None else clock,
         )
 
     def _surface_verifier(
@@ -638,6 +641,9 @@ class FastApiControlRouteTests(unittest.TestCase):
         app = self._app()
         prior_routes = app.router.routes
         prior_identities = tuple(map(id, prior_routes))
+        prior_route_states = tuple(
+            (route, dict(vars(route))) for route in prior_routes
+        )
         cached_schema = app.openapi()
         ordinary_schema = json.loads(json.dumps(cached_schema["paths"]["/ordinary"]))
         app_state = dict(vars(app))
@@ -672,6 +678,11 @@ class FastApiControlRouteTests(unittest.TestCase):
             all(not path.startswith("/__control") for path in app.openapi()["paths"])
         )
         self.assertEqual(variable.descriptor_calls, 1)
+        for route, state in prior_route_states:
+            self.assertEqual(set(vars(route)), set(state))
+            self.assertTrue(
+                all(vars(route)[key] is value for key, value in state.items())
+            )
         self.assertEqual(set(vars(app)), set(app_state))
         self.assertTrue(
             all(vars(app)[key] is value for key, value in app_state.items())
@@ -701,17 +712,15 @@ class FastApiControlRouteTests(unittest.TestCase):
 
     def test_public_installer_executes_read_apply_and_one_replay_waiter(self) -> None:
         declaration = _declaration("routing")
-        entered = Event()
-        release = Event()
-        variable = RecordingVariable(
-            "routing",
-            apply_gate=(entered, release),
+        read_variable = RecordingVariable("routing")
+        read_app = self._app()
+        self._install(
+            read_app,
+            declaration=declaration,
+            variables=(read_variable,),
         )
-        app = self._app()
-        self._install(app, declaration=declaration, variables=(variable,))
-
         read = _command_request(NodeControlOperation.READ_STATE)
-        read_status, read_body = asyncio.run(self._command_call(app, read))
+        read_status, read_body = asyncio.run(self._command_call(read_app, read))
         self.assertEqual(read_status, 200)
         self.assertEqual(
             json.loads(read_body),
@@ -724,6 +733,22 @@ class FastApiControlRouteTests(unittest.TestCase):
                 )
             ),
         )
+        self.assertEqual(read_variable.read_calls, 1)
+
+        entered = Event()
+        release = Event()
+        command_clock = RecordingClock()
+        variable = RecordingVariable(
+            "routing",
+            apply_gate=(entered, release),
+        )
+        app = self._app()
+        self._install(
+            app,
+            declaration=declaration,
+            variables=(variable,),
+            command_verifier=self._command_verifier(command_clock),
+        )
 
         apply = _command_request(NodeControlOperation.APPLY_COMMAND)
 
@@ -732,6 +757,14 @@ class FastApiControlRouteTests(unittest.TestCase):
             entered_ok = await asyncio.to_thread(entered.wait, 2)
             self.assertTrue(entered_ok)
             waiter = asyncio.create_task(self._command_call(app, apply))
+            second_admitted = await asyncio.to_thread(
+                command_clock.second_call.wait,
+                2,
+            )
+            self.assertTrue(second_admitted)
+            self.assertFalse(owner.done())
+            self.assertFalse(waiter.done())
+            self.assertEqual(variable.apply_calls, 1)
             heartbeat = asyncio.Event()
             asyncio.get_running_loop().call_soon(heartbeat.set)
             await asyncio.wait_for(heartbeat.wait(), 1)
@@ -751,7 +784,7 @@ class FastApiControlRouteTests(unittest.TestCase):
                 )
             ),
         )
-        self.assertEqual((variable.read_calls, variable.apply_calls), (1, 1))
+        self.assertEqual((variable.read_calls, variable.apply_calls), (0, 1))
 
         foreign = _command_request(
             NodeControlOperation.READ_STATE,
@@ -982,18 +1015,34 @@ class FastApiControlRouteTests(unittest.TestCase):
             _surface_token(self.surface_private, request)
         )
         cases = (
-            ({"chunks": (b"x",)}, 400),
-            ({"chunks": (b"", b"late")}, 400),
-            ({"query_string": b"x=1"}, 400),
-            ({"query_string": b"x" * 1_025}, 413),
-            ({"chunks": (b"x" * 16_385,)}, 413),
-            ({"headers": [authorization, authorization]}, 401),
-            ({"headers": [(b"x", b"y" * 32_769)]}, 413),
+            ({"chunks": (b"body-secret",)}, 400, "request-invalid"),
+            ({"chunks": (b"", b"late-secret")}, 400, "request-invalid"),
+            ({"query_string": b"query-secret=1"}, 400, "request-invalid"),
+            (
+                {"query_string": b"query-secret" + b"x" * 1_025},
+                413,
+                "request-too-large",
+            ),
+            (
+                {"chunks": (b"body-secret" + b"x" * 16_385,)},
+                413,
+                "request-too-large",
+            ),
+            (
+                {"headers": [authorization, authorization]},
+                401,
+                "credential-rejected",
+            ),
+            (
+                {"headers": [(b"header-secret", b"y" * 32_769)]},
+                413,
+                "request-too-large",
+            ),
         )
-        for changes, expected in cases:
+        for changes, expected, code in cases:
             with self.subTest(changes=tuple(changes)):
                 options = {"headers": [authorization], **changes}
-                status, _ = asyncio.run(
+                status, body = asyncio.run(
                     self._asgi_request(
                         app,
                         "GET",
@@ -1002,6 +1051,20 @@ class FastApiControlRouteTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(status, expected)
+                self.assertEqual(
+                    body,
+                    _json_bytes({"code": f"node-control.{code}"}),
+                )
+                self.assertLessEqual(len(body), 128)
+                for forbidden in (
+                    b"body-secret",
+                    b"late-secret",
+                    b"query-secret",
+                    b"header-secret",
+                    b"Bearer",
+                    b"Traceback",
+                ):
+                    self.assertNotIn(forbidden, body)
         self.assertEqual(clock.calls, 0)
         self.assertEqual(variable.descriptor_calls, 1)
         self.assertEqual((variable.read_calls, variable.apply_calls), (0, 0))
@@ -1157,14 +1220,14 @@ class FastApiControlRouteTests(unittest.TestCase):
         cached_schema = app.openapi()
         prior_routes = app.router.routes
         prior_ids = tuple(map(id, prior_routes))
+        prior_route_states = tuple(
+            (route, dict(vars(route))) for route in prior_routes
+        )
         app_state = dict(vars(app))
         router_state = dict(vars(app.router))
         state_values = dict(app.state._state)
 
-        with self.assertRaisesRegex(
-            ValueError,
-            "FastAPI control route installation is invalid",
-        ) as raised:
+        with self.assertRaises(ValueError) as raised:
             self._install(
                 app,
                 declaration=_declaration("routing"),
@@ -1172,12 +1235,22 @@ class FastApiControlRouteTests(unittest.TestCase):
             )
 
         rendered = f"{raised.exception!s} {raised.exception!r}"
+        self.assertEqual(
+            str(raised.exception),
+            "FastAPI control route installation is invalid",
+        )
+        self.assertLessEqual(len(str(raised.exception).encode("utf-8")), 128)
         self.assertNotIn("authorization", rendered)
         self.assertNotIn("descriptor-secret", rendered)
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
         self.assertIs(app.router.routes, prior_routes)
         self.assertEqual(tuple(map(id, prior_routes)), prior_ids)
+        for route, state in prior_route_states:
+            self.assertEqual(set(vars(route)), set(state))
+            self.assertTrue(
+                all(vars(route)[key] is value for key, value in state.items())
+            )
         self.assertIs(app.openapi(), cached_schema)
         self.assertEqual(set(vars(app)), set(app_state))
         self.assertTrue(
@@ -1279,6 +1352,7 @@ class FastApiControlRouteTests(unittest.TestCase):
         app.router.routes.append(
             starlette_routing.WebSocketRoute("/starlette-socket", endpoint)
         )
+        app.add_api_websocket_route("/ordinary-socket", endpoint)
         self._install(
             app,
             declaration=_declaration("routing"),
