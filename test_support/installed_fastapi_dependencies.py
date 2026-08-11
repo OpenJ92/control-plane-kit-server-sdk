@@ -29,6 +29,7 @@ def main() -> int:
             version("PyJWT") == "2.13.0"
             and version("cryptography") == "50.0.0"
             and version("fastapi") == "0.141.1"
+            and version("starlette") == "1.6.0"
         )
     except Exception:
         return _reject()
@@ -36,8 +37,10 @@ def main() -> int:
         return _reject()
 
     try:
-        import control_plane_kit_server_sdk._fastapi_variable_routes
+        import control_plane_kit_server_sdk.fastapi as sdk_fastapi
     except Exception:
+        return _reject()
+    if sdk_fastapi.__all__ != ["install_cpk_control_routes"]:
         return _reject()
 
     print("fastapi dependencies import ok")

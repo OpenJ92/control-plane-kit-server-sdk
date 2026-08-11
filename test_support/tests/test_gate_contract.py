@@ -265,16 +265,18 @@ class PackageGateContractTests(unittest.TestCase):
             'version("PyJWT")',
             'version("cryptography")',
             'version("fastapi")',
+            'version("starlette")',
             '"2.13.0"',
             '"50.0.0"',
             '"0.141.1"',
+            '"1.6.0"',
             "import control_plane_kit_server_sdk",
             '"fastapi" not in sys.modules',
             '"starlette" not in sys.modules',
             '"anyio" not in sys.modules',
             '"jwt" not in sys.modules',
             '"cryptography" not in sys.modules',
-            "import control_plane_kit_server_sdk._fastapi_variable_routes",
+            "import control_plane_kit_server_sdk.fastapi as sdk_fastapi",
             "fastapi dependencies import ok",
         ):
             with self.subTest(expected=expected):
@@ -282,16 +284,18 @@ class PackageGateContractTests(unittest.TestCase):
 
     def test_installed_fastapi_probe_executes_exact_version_contract(self) -> None:
         cases = (
-            ("accepted", "2.13.0", "50.0.0", "0.141.1", True),
-            ("wrong-pyjwt", "2.12.0", "50.0.0", "0.141.1", False),
-            ("wrong-cryptography", "2.13.0", "49.0.0", "0.141.1", False),
-            ("wrong-fastapi", "2.13.0", "50.0.0", "0.140.0", False),
+            ("accepted", "2.13.0", "50.0.0", "0.141.1", "1.6.0", True),
+            ("wrong-pyjwt", "2.12.0", "50.0.0", "0.141.1", "1.6.0", False),
+            ("wrong-cryptography", "2.13.0", "49.0.0", "0.141.1", "1.6.0", False),
+            ("wrong-fastapi", "2.13.0", "50.0.0", "0.140.0", "1.6.0", False),
+            ("wrong-starlette", "2.13.0", "50.0.0", "0.141.1", "1.5.0", False),
         )
         for (
             identity,
             pyjwt_version,
             cryptography_version,
             fastapi_version,
+            starlette_version,
             accepted,
         ) in cases:
             with self.subTest(identity=identity):
@@ -299,6 +303,7 @@ class PackageGateContractTests(unittest.TestCase):
                     pyjwt_version=pyjwt_version,
                     cryptography_version=cryptography_version,
                     fastapi_version=fastapi_version,
+                    starlette_version=starlette_version,
                 )
                 if accepted:
                     self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -324,6 +329,7 @@ class PackageGateContractTests(unittest.TestCase):
                         pyjwt_version,
                         cryptography_version,
                         fastapi_version,
+                        starlette_version,
                         str(temporary_root),
                         "sensitive fake module material",
                     ):
@@ -339,6 +345,7 @@ class PackageGateContractTests(unittest.TestCase):
             pyjwt_version="2.13.0",
             cryptography_version="50.0.0",
             fastapi_version="0.141.1",
+            starlette_version="1.6.0",
             arguments=(
                 sys.executable,
                 "-c",
@@ -519,11 +526,13 @@ class PackageGateContractTests(unittest.TestCase):
         pyjwt_version: str,
         cryptography_version: str,
         fastapi_version: str,
+        starlette_version: str,
     ) -> tuple[subprocess.CompletedProcess[str], str, Path]:
         return self._run_fastapi_environment(
             pyjwt_version=pyjwt_version,
             cryptography_version=cryptography_version,
             fastapi_version=fastapi_version,
+            starlette_version=starlette_version,
             arguments=(
                 sys.executable,
                 str(
@@ -540,6 +549,7 @@ class PackageGateContractTests(unittest.TestCase):
         pyjwt_version: str,
         cryptography_version: str,
         fastapi_version: str,
+        starlette_version: str,
         arguments: tuple[str, ...],
     ) -> tuple[subprocess.CompletedProcess[str], str, Path]:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -564,7 +574,7 @@ with Path(os.environ["CPK_FASTAPI_PROBE_EVENTS"]).open("a") as stream:
             (
                 root
                 / "control_plane_kit_server_sdk"
-                / "_fastapi_variable_routes.py"
+                / "fastapi.py"
             ).write_text(
                 "import fastapi\n"
                 "import jwt\n"
@@ -572,7 +582,10 @@ with Path(os.environ["CPK_FASTAPI_PROBE_EVENTS"]).open("a") as stream:
                 "import os\n"
                 "from pathlib import Path\n"
                 "with Path(os.environ['CPK_FASTAPI_PROBE_EVENTS']).open('a') as stream:\n"
-                "    stream.write('adapter\\n')\n",
+                "    stream.write('adapter\\n')\n"
+                "def install_cpk_control_routes():\n"
+                "    return None\n"
+                "__all__ = ['install_cpk_control_routes']\n",
                 encoding="utf-8",
             )
             self._write_fake_module(
@@ -610,6 +623,7 @@ SENSITIVE = "sensitive fake module material"
                 cryptography_version,
             )
             self._write_fake_distribution(root, "fastapi", fastapi_version)
+            self._write_fake_distribution(root, "starlette", starlette_version)
             environment = dict(os.environ)
             environment.update(
                 {

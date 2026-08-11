@@ -26,6 +26,7 @@ VERIFICATION_DEPENDENCIES = [
 FASTAPI_DEPENDENCIES = [
     *VERIFICATION_DEPENDENCIES,
     "fastapi==0.141.1",
+    "starlette==1.6.0",
 ]
 
 
@@ -145,8 +146,12 @@ for name in (
             permitted: set[str] = set()
             if path.name == "verification.py":
                 permitted.add("jwt")
-            if path.name == "_fastapi_variable_routes.py":
-                permitted.add("fastapi")
+            if path.name in {
+                "_fastapi_variable_routes.py",
+                "_fastapi_surface_routes.py",
+                "fastapi.py",
+            }:
+                permitted.update({"fastapi", "starlette"})
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):

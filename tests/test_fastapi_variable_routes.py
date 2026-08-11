@@ -510,6 +510,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
                 "PyJWT==2.13.0",
                 "cryptography==50.0.0",
                 "fastapi==0.141.1",
+                "starlette==1.6.0",
             ],
         )
         root = importlib.import_module("control_plane_kit_server_sdk")
