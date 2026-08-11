@@ -266,24 +266,19 @@ async def _handle(
     return _response(status, body)
 
 
-def _build_variable_routes(
+def _build_variable_registry(
     *,
-    target: NodeControlTarget,
     declaration: WorkloadNodeControlSurfaceDeclaration,
     variables: tuple[object, ...],
-    verifier: Ed25519WorkloadNodeControlVerifier,
-    replay: _ProcessLocalNodeControlReplay,
-) -> tuple[object, ...]:
+) -> dict[
+    str,
+    tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
+]:
     if (
-        type(target) is not NodeControlTarget
-        or type(declaration) is not WorkloadNodeControlSurfaceDeclaration
+        type(declaration) is not WorkloadNodeControlSurfaceDeclaration
         or type(variables) is not tuple
-        or type(verifier) is not Ed25519WorkloadNodeControlVerifier
-        or type(replay) is not _ProcessLocalNodeControlReplay
-        or target.provider_socket_name != declaration.surface.provider_socket_name
     ):
-        raise ValueError("FastAPI variable route construction is invalid")
-
+        raise ValueError("FastAPI variable route registry is invalid")
     declared = {
         descriptor.variable_name.value: descriptor
         for descriptor in declaration.surface.variables
@@ -310,6 +305,26 @@ def _build_variable_routes(
             )
     except Exception:
         raise ValueError("FastAPI variable route registry is invalid") from None
+    return registry
+
+
+def _build_variable_routes_from_registry(
+    *,
+    target: NodeControlTarget,
+    registry: dict[
+        str,
+        tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
+    ],
+    verifier: Ed25519WorkloadNodeControlVerifier,
+    replay: _ProcessLocalNodeControlReplay,
+) -> tuple[object, ...]:
+    if (
+        type(target) is not NodeControlTarget
+        or type(registry) is not dict
+        or type(verifier) is not Ed25519WorkloadNodeControlVerifier
+        or type(replay) is not _ProcessLocalNodeControlReplay
+    ):
+        raise ValueError("FastAPI variable route construction is invalid")
 
     router = APIRouter()
 
@@ -339,13 +354,46 @@ def _build_variable_routes(
         "/__control/variables/{variable_name}",
         read_variable,
         methods=["GET"],
+        name="read-variable",
+        include_in_schema=False,
     )
     router.add_api_route(
         "/__control/variables/{variable_name}/commands",
         apply_command,
         methods=["POST"],
+        name="apply-variable-command",
+        include_in_schema=False,
     )
     return tuple(router.routes)
+
+
+def _build_variable_routes(
+    *,
+    target: NodeControlTarget,
+    declaration: WorkloadNodeControlSurfaceDeclaration,
+    variables: tuple[object, ...],
+    verifier: Ed25519WorkloadNodeControlVerifier,
+    replay: _ProcessLocalNodeControlReplay,
+) -> tuple[object, ...]:
+    if (
+        type(target) is not NodeControlTarget
+        or type(declaration) is not WorkloadNodeControlSurfaceDeclaration
+        or type(variables) is not tuple
+        or type(verifier) is not Ed25519WorkloadNodeControlVerifier
+        or type(replay) is not _ProcessLocalNodeControlReplay
+        or target.provider_socket_name != declaration.surface.provider_socket_name
+    ):
+        raise ValueError("FastAPI variable route construction is invalid")
+    registry = _build_variable_registry(
+        declaration=declaration,
+        variables=variables,
+    )
+    return _build_variable_routes_from_registry(
+        target=target,
+        registry=registry,
+        verifier=verifier,
+        replay=replay,
+    )
 
 
 __all__: list[str] = []

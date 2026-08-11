@@ -129,7 +129,7 @@ docker run \
     if [ "$CPK_TEST_DEPENDENCY_MODE" = "local-core" ]; then
       cp -R /workspace/control-plane-kit/control-plane-kit-core /tmp/control-plane-kit-core
       python -m pip install /tmp/control-plane-kit-core
-      python -m pip install "PyJWT==2.13.0" "cryptography==50.0.0" "fastapi==0.141.1"
+      python -m pip install "PyJWT==2.13.0" "cryptography==50.0.0" "fastapi==0.141.1" "starlette==1.6.0"
       python -m pip install --no-deps --force-reinstall ".[fastapi]"
     else
       python -m pip install --force-reinstall ".[fastapi]"

@@ -1220,7 +1220,7 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
 
         self.assertEqual(
             [name for name, _line in codec_calls],
-            ["_build_variable_routes"],
+            ["_build_variable_registry"],
         )
 
     def test_verifier_through_variable_execution_runs_off_event_loop(self) -> None:

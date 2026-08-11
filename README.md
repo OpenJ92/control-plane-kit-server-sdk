@@ -37,10 +37,25 @@ FastAPI applications may install the private adapter dependency set with:
 python -m pip install ".[fastapi]"
 ```
 
-That extra contains the same verification pair plus `fastapi==0.141.1`. It
-supports the internal authenticated variable routes implemented by #1551. The
-SDK root remains lazy and framework-neutral; #1552 owns the one public installer
-that will compose variable routes with stateless capability and status reads.
+That extra contains the same verification pair plus `fastapi==0.141.1` and
+`starlette==1.6.0`. It supports the one public, optional FastAPI composition:
+
+```python
+from control_plane_kit_server_sdk.fastapi import install_cpk_control_routes
+
+install_cpk_control_routes(
+    app,
+    target,
+    declaration,
+    variables,
+    command_verifier,
+    surface_read_verifier,
+)
+```
+
+The installer validates and constructs the complete four-route CPK surface
+before replacing the host route list once. The SDK root remains lazy and
+framework-neutral.
 Authenticated APPLY invokes the caller-supplied variable and can mutate
 process-local or durable workload-owned state. The SDK adapter owns no storage,
 transaction, graph authority, or provider client; #1506 replay remains its

@@ -37,10 +37,11 @@ than an adapter-specific failure. READ has no replay state.
 
 ## Boundaries
 
-The `fastapi` optional extra pins only the three named direct dependencies:
-`PyJWT==2.13.0`, `cryptography==50.0.0`, and `fastapi==0.141.1`. The SDK root
-does not import FastAPI, Starlette, AnyIO, JWT, or cryptography. The private
-module is intentionally absent from `__all__`.
+At #1551, the `fastapi` optional extra pinned three named direct dependencies:
+`PyJWT==2.13.0`, `cryptography==50.0.0`, and `fastapi==0.141.1`. Decision 0014
+adds the exact Starlette pin required by the public route classifier. The SDK
+root does not import FastAPI, Starlette, AnyIO, JWT, or cryptography. The
+private module is intentionally absent from `__all__`.
 
 No credential, request candidate, target identity, provider exception, or
 variable result is rendered in an error. Transport and interpretation failures

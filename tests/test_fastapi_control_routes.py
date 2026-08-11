@@ -39,6 +39,7 @@ from control_plane_kit_core import (
     NodeControlOperation,
     NodeControlPayload,
     NodeControlReadStateSucceeded,
+    NodeControlResultCodec,
     NodeControlSurfaceReadKind,
     NodeControlSurfaceReadContractError,
     NodeControlSurfaceReadRequest,
@@ -986,9 +987,9 @@ class FastApiControlRouteTests(unittest.TestCase):
         ):
             codec = NodeControlSurfaceReadResultCodec(request, declaration)
             candidate = {**json.loads(body), "unknown": ""}
-            padding = maximum + 1 - len(rfc8785.dumps(candidate))
-            self.assertGreaterEqual(padding, 0)
-            candidate["unknown"] = "x" * padding
+            excess = len(rfc8785.dumps(candidate)) - maximum
+            self.assertGreater(excess, 1)
+            candidate["request_id"] = candidate["request_id"][: -(excess - 1)]
             self.assertEqual(len(rfc8785.dumps(candidate)), maximum + 1)
             with self.assertRaisesRegex(
                 NodeControlSurfaceReadContractError,
