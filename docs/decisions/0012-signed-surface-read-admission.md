@@ -44,4 +44,6 @@ registry, persistence, or effects. It holds no private key.
 The exact `candidate=None` input is a framework-neutral no-payload assertion.
 It does not claim to enforce HTTP bodylessness. Issue #1507 owns HTTP extraction
 and framing, live registry lookup, result construction, and execution of the
-admitted read. It must preserve admission before those outer operations.
+admitted read. The adapter must safely extract and bound route/body inputs and
+prove bodylessness before calling this verifier. Successful admission must then
+precede live registry access, result construction, and execution.

@@ -178,6 +178,9 @@ bounded lifetime. The verifier owns no private key, no HTTP framing, no
 registry lookup, no registry state, no result construction, and no replay
 store. Issue #1507 owns
 the HTTP adapter, live surface registry, and execution of the admitted read.
+That adapter must safely extract and bound route/body inputs and prove
+bodylessness before calling admission; successful admission must precede live
+registry access and result production.
 
 ## Validation
 
