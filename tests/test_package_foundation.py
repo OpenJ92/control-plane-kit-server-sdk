@@ -23,6 +23,10 @@ VERIFICATION_DEPENDENCIES = [
     "PyJWT==2.13.0",
     "cryptography==50.0.0",
 ]
+FASTAPI_DEPENDENCIES = [
+    *VERIFICATION_DEPENDENCIES,
+    "fastapi==0.141.1",
+]
 
 
 class PackageFoundationTests(unittest.TestCase):
@@ -44,7 +48,10 @@ class PackageFoundationTests(unittest.TestCase):
         self.assertEqual(project["dependencies"], [CORE_DEPENDENCY])
         self.assertEqual(
             project["optional-dependencies"],
-            {"verification": VERIFICATION_DEPENDENCIES},
+            {
+                "verification": VERIFICATION_DEPENDENCIES,
+                "fastapi": FASTAPI_DEPENDENCIES,
+            },
         )
         self.assertNotIn("scripts", project)
         self.assertEqual(
@@ -95,6 +102,8 @@ for name in (
     "control_plane_kit_secrets",
     "control_plane_kit_servers",
     "fastapi",
+    "starlette",
+    "anyio",
     "psycopg",
     "docker",
     "cloudflare",
@@ -126,12 +135,18 @@ for name in (
             "cryptography",
             "docker",
             "fastapi",
+            "starlette",
+            "anyio",
             "jwt",
             "psycopg",
         }
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.rglob("*.py")):
-            permitted = {"jwt"} if path.name == "verification.py" else set()
+            permitted: set[str] = set()
+            if path.name == "verification.py":
+                permitted.add("jwt")
+            if path.name == "_fastapi_variable_routes.py":
+                permitted.add("fastapi")
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):

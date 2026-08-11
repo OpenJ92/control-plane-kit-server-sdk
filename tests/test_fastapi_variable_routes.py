@@ -7,6 +7,8 @@ import importlib
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 from threading import Event, Lock, get_ident
 import tomllib
 import unittest
@@ -26,6 +28,7 @@ from control_plane_kit_core import (
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
     DelegationPublicKey,
+    MapControlState,
     NodeControlCommandRequest,
     NodeControlEvidence,
     NodeControlEvidenceCode,
@@ -60,6 +63,8 @@ AUDIENCE = "workload:router:control"
 NOW = 150
 MAX_BODY_BYTES = 16_384
 MAX_HEADER_BYTES = 32_768
+MAX_HEADER_COUNT = 64
+MAX_PATH_BYTES = 1_024
 
 ERRORS = {
     400: {"code": "node-control.request-invalid"},
@@ -299,9 +304,14 @@ class ThreadRecordingClock:
     def __init__(self, now: int = NOW) -> None:
         self.now = now
         self.thread_ids: list[int] = []
+        self.second_call = Event()
+        self._lock = Lock()
 
     def __call__(self) -> int:
-        self.thread_ids.append(get_ident())
+        with self._lock:
+            self.thread_ids.append(get_ident())
+            if len(self.thread_ids) >= 2:
+                self.second_call.set()
         return self.now
 
 
@@ -501,6 +511,21 @@ class FastApiVariableRouteTests(unittest.TestCase):
         self.assertNotIn("install_cpk_control_routes", root.__all__)
         self.assertFalse(hasattr(root, "install_cpk_control_routes"))
 
+        script = """
+import sys
+import control_plane_kit_server_sdk
+
+for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
+    assert name not in sys.modules, name
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_builder_returns_only_exact_command_routes(self) -> None:
         variable = RecordingVariable(_descriptor())
         routes = self._routes((variable,))
@@ -576,7 +601,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
         variable = RecordingVariable(_descriptor())
         app = self._app(variable)
         read = _request(NodeControlOperation.READ_STATE)
-        status, content, _ = self._read(app, read)
+        status, content, body = self._read(app, read)
         self.assertEqual(status, 200)
         self.assertEqual(
             content,
@@ -587,9 +612,11 @@ class FastApiVariableRouteTests(unittest.TestCase):
                 ScalarControlState("blue"),
             ).descriptor(),
         )
+        self.assertEqual(body, _json_bytes(content))
+        self.assertLessEqual(len(body), MAX_BODY_BYTES)
 
         apply = _request(NodeControlOperation.APPLY_COMMAND)
-        status, content, _ = self._apply(app, apply)
+        status, content, body = self._apply(app, apply)
         self.assertEqual(status, 200)
         self.assertEqual(
             content,
@@ -599,24 +626,50 @@ class FastApiVariableRouteTests(unittest.TestCase):
                 NodeControlEvidence(NodeControlEvidenceCode.APPLIED),
             ).descriptor(),
         )
+        self.assertEqual(body, _json_bytes(content))
+        self.assertLessEqual(len(body), MAX_BODY_BYTES)
         self.assertTrue(variable.assert_identity)
 
     def test_rejected_and_failed_core_results_remain_nominal_http_results(self) -> None:
-        read = _request(NodeControlOperation.READ_STATE)
-        results = (
-            NodeControlRejected(
-                read.request_id,
+        cases = (
+            (
                 NodeControlOperation.READ_STATE,
-                NodeControlEvidence(NodeControlEvidenceCode.NOT_AUTHORIZED),
+                NodeControlRejected,
+                NodeControlEvidenceCode.NOT_AUTHORIZED,
             ),
-            NodeControlFailed(read.request_id, NodeControlOperation.READ_STATE),
+            (NodeControlOperation.READ_STATE, NodeControlFailed, None),
+            (
+                NodeControlOperation.APPLY_COMMAND,
+                NodeControlRejected,
+                NodeControlEvidenceCode.PRECONDITION_FAILED,
+            ),
+            (NodeControlOperation.APPLY_COMMAND, NodeControlFailed, None),
         )
-        for result in results:
-            with self.subTest(result=result):
-                variable = RecordingVariable(_descriptor(), read_result=result)
-                status, content, _ = self._read(self._app(variable), read)
+        for operation, result_type, evidence_code in cases:
+            with self.subTest(operation=operation, result_type=result_type):
+                request = _request(operation)
+                if result_type is NodeControlRejected:
+                    result = result_type(
+                        request.request_id,
+                        operation,
+                        NodeControlEvidence(evidence_code),
+                    )
+                else:
+                    result = result_type(request.request_id, operation)
+                variable = RecordingVariable(
+                    _descriptor(),
+                    read_result=result,
+                    apply_result=result,
+                )
+                response = (
+                    self._read(self._app(variable), request)
+                    if operation is NodeControlOperation.READ_STATE
+                    else self._apply(self._app(variable), request)
+                )
+                status, content, body = response
                 self.assertEqual(status, 200)
                 self.assertEqual(content, result.descriptor())
+                self.assertEqual(body, _json_bytes(result.descriptor()))
 
     def test_invalid_result_and_variable_exception_are_closed(self) -> None:
         read = _request(NodeControlOperation.READ_STATE)
@@ -631,6 +684,64 @@ class FastApiVariableRouteTests(unittest.TestCase):
                 variable = RecordingVariable(_descriptor(), read_result=result)
                 self.assert_error(self._read(self._app(variable), read), 500)
                 self.assertEqual(variable.read_calls, 1)
+
+        wrong_state = NodeControlReadStateSucceeded(
+            read.request_id,
+            ControlPlaneStateCodec.MAP_V1,
+            4,
+            MapControlState((("route", "blue"),)),
+        )
+        self.assert_error(
+            self._read(
+                self._app(
+                    RecordingVariable(_descriptor(), read_result=wrong_state)
+                ),
+                read,
+            ),
+            500,
+        )
+
+        apply = _request(NodeControlOperation.APPLY_COMMAND)
+        for result in (
+            NodeControlFailed("wrong-request", NodeControlOperation.APPLY_COMMAND),
+            NodeControlFailed(apply.request_id, NodeControlOperation.READ_STATE),
+        ):
+            with self.subTest(apply_result=result):
+                self.assert_error(
+                    self._apply(
+                        self._app(
+                            RecordingVariable(_descriptor(), apply_result=result)
+                        ),
+                        apply,
+                    ),
+                    500,
+                )
+
+        class OversizedReadResult(NodeControlReadStateSucceeded):
+            emit_oversized = False
+
+            def descriptor(self) -> dict[str, object]:
+                descriptor = super().descriptor()
+                if self.emit_oversized:
+                    descriptor["padding"] = "x" * (MAX_BODY_BYTES + 1)
+                return descriptor
+
+        oversized = OversizedReadResult(
+            read.request_id,
+            ControlPlaneStateCodec.SCALAR_V1,
+            4,
+            ScalarControlState("blue"),
+        )
+        OversizedReadResult.emit_oversized = True
+        self.assert_error(
+            self._read(
+                self._app(
+                    RecordingVariable(_descriptor(), read_result=oversized)
+                ),
+                read,
+            ),
+            500,
+        )
 
     def test_missing_malformed_duplicate_and_alternate_credentials_reject(self) -> None:
         variable = RecordingVariable(_descriptor())
@@ -654,15 +765,48 @@ class FastApiVariableRouteTests(unittest.TestCase):
         app = self._app(variable)
         read = _request(NodeControlOperation.READ_STATE)
         self.assert_error(self._read(app, read, chunks=(b"x",)), 400)
+        self.assert_error(self._read(app, read, chunks=(b"", b"hidden")), 400)
+
+        accepted_headers = [self._authorization(read)] + [
+            (f"x-{index}".encode("ascii"), b"x")
+            for index in range(MAX_HEADER_COUNT - 1)
+        ]
+        accepted_variable = RecordingVariable(_descriptor())
+        self.assertEqual(
+            self._read(
+                self._app(accepted_variable),
+                read,
+                headers=accepted_headers,
+            )[0],
+            200,
+        )
+        self.assertEqual(accepted_variable.read_calls, 1)
 
         huge_headers = [
             self._authorization(read),
             (b"x-padding", b"x" * MAX_HEADER_BYTES),
         ]
         self.assert_error(self._read(app, read, headers=huge_headers), 413)
+        authorization = self._authorization(read)
+        exact_header_value_size = MAX_HEADER_BYTES - sum(
+            len(name) + len(value) for name, value in (authorization,)
+        ) - len(b"x-padding")
+        exact_header_variable = RecordingVariable(_descriptor())
+        self.assertEqual(
+            self._read(
+                self._app(exact_header_variable),
+                read,
+                headers=[
+                    authorization,
+                    (b"x-padding", b"x" * exact_header_value_size),
+                ],
+            )[0],
+            200,
+        )
+        self.assertEqual(exact_header_variable.read_calls, 1)
         too_many_headers = [self._authorization(read)] + [
             (f"x-{index}".encode("ascii"), b"x")
-            for index in range(64)
+            for index in range(MAX_HEADER_COUNT)
         ]
         self.assert_error(self._read(app, read, headers=too_many_headers), 413)
 
@@ -671,8 +815,43 @@ class FastApiVariableRouteTests(unittest.TestCase):
             self._apply(app, apply, chunks=(b"x" * (MAX_BODY_BYTES + 1),)),
             413,
         )
+        self.assert_error(
+            self._apply(
+                app,
+                apply,
+                chunks=(b"x" * 4_096,) * 4 + (b"x",),
+            ),
+            413,
+        )
+        self.assert_error(
+            self._apply(app, apply, chunks=(b"x" * MAX_BODY_BYTES,)),
+            401,
+        )
+
+        huge_variable = "x" * (MAX_PATH_BYTES + 1)
+        self.assert_error(
+            self._read(app, read, variable=huge_variable),
+            413,
+        )
         self.assertEqual(variable.read_calls, 0)
         self.assertEqual(variable.apply_calls, 0)
+
+    def test_fragmented_apply_reconstructs_the_exact_candidate(self) -> None:
+        variable = RecordingVariable(_descriptor())
+        app = self._app(variable)
+        request = _request(NodeControlOperation.APPLY_COMMAND)
+        candidate = _candidate(request)
+        cut_one = len(candidate) // 3
+        cut_two = 2 * len(candidate) // 3
+
+        response = self._apply(
+            app,
+            request,
+            chunks=(candidate[:cut_one], candidate[cut_one:cut_two], candidate[cut_two:]),
+        )
+
+        self.assertEqual(response[0], 200)
+        self.assertEqual(variable.apply_calls, 1)
 
     def test_invalid_apply_candidate_rejects_before_replay_or_variable(self) -> None:
         variable = RecordingVariable(_descriptor())
@@ -683,8 +862,6 @@ class FastApiVariableRouteTests(unittest.TestCase):
         self.assertEqual(variable.apply_calls, 1)
 
     def test_same_audience_nonlocal_targets_reject_before_registry(self) -> None:
-        variable = RecordingVariable(_descriptor())
-        app = self._app(variable)
         substitutions = (
             replace(
                 _target(),
@@ -712,12 +889,28 @@ class FastApiVariableRouteTests(unittest.TestCase):
                 ),
             ),
         )
-        for target in substitutions:
-            with self.subTest(target=target):
-                request = _request(NodeControlOperation.READ_STATE, target=target)
-                self.assert_error(self._read(app, request), 403)
-        self.assertEqual(variable.read_calls, 0)
+        for operation in NodeControlOperation:
+            for index, target in enumerate(substitutions):
+                with self.subTest(operation=operation, target=target):
+                    variable = RecordingVariable(_descriptor())
+                    app = self._app(variable)
+                    request = _request(
+                        operation,
+                        target=target,
+                        request_id=f"nonlocal-{operation.value}-{index}",
+                        key=f"nonlocal-{operation.value}-{index}",
+                    )
+                    response = (
+                        self._read(app, request)
+                        if operation is NodeControlOperation.READ_STATE
+                        else self._apply(app, request)
+                    )
+                    self.assert_error(response, 403)
+                    self.assertEqual(variable.read_calls, 0)
+                    self.assertEqual(variable.apply_calls, 0)
 
+        variable = RecordingVariable(_descriptor())
+        app = self._app(variable)
         wrong_apply = _request(
             NodeControlOperation.APPLY_COMMAND,
             target=substitutions[0],
@@ -730,6 +923,21 @@ class FastApiVariableRouteTests(unittest.TestCase):
         )
         self.assertEqual(self._apply(app, local_apply)[0], 200)
         self.assertEqual(variable.apply_calls, 1)
+
+        nonlocal_missing = _request(
+            NodeControlOperation.READ_STATE,
+            target=substitutions[0],
+            variable="missing",
+        )
+        self.assert_error(
+            self._read(app, nonlocal_missing, variable="missing"),
+            403,
+        )
+        local_missing = _request(
+            NodeControlOperation.READ_STATE,
+            variable="missing",
+        )
+        self.assert_error(self._read(app, local_missing, variable="missing"), 404)
 
     def test_route_operation_and_variable_binding_precede_lookup(self) -> None:
         variable = RecordingVariable(_descriptor())
@@ -801,7 +1009,8 @@ class FastApiVariableRouteTests(unittest.TestCase):
             _descriptor(),
             apply_gate=(entered, release),
         )
-        app = self._app(variable)
+        clock = ThreadRecordingClock()
+        app = self._app(variable, verifier=self._verifier(clock))
         request = _request(NodeControlOperation.APPLY_COMMAND)
 
         async def scenario():
@@ -824,12 +1033,29 @@ class FastApiVariableRouteTests(unittest.TestCase):
                     chunks=(_candidate(request),),
                 )
             )
+            self.assertTrue(await asyncio.to_thread(clock.second_call.wait, 3))
+            loop_progressed = False
+
+            async def mark_loop_progress() -> None:
+                nonlocal loop_progressed
+                await asyncio.sleep(0)
+                loop_progressed = True
+
+            await mark_loop_progress()
+            self.assertTrue(loop_progressed)
+            self.assertFalse(first.done())
             release.set()
             return await asyncio.gather(first, second)
 
         responses = asyncio.run(scenario())
         self.assertEqual(responses[0], responses[1])
         self.assertEqual(variable.apply_calls, 1)
+
+    def test_source_has_one_explicit_threadpool_handoff(self) -> None:
+        module = self._module()
+        source = Path(module.__file__).read_text(encoding="utf-8")
+
+        self.assertEqual(source.count("run_in_threadpool("), 1)
 
     def test_verifier_through_variable_execution_runs_off_event_loop(self) -> None:
         clock = ThreadRecordingClock()
@@ -883,6 +1109,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
                     ),
                 ),
             ),
+            self._read(app, _request(NodeControlOperation.READ_STATE)),
         )
         forbidden = (
             "secret",

@@ -102,9 +102,12 @@ class PackageGateContractTests(unittest.TestCase):
             "python /test-support/installed_import.py",
             "phase=verification-extra-install",
             ".[verification]",
+            "python /test-support/installed_verification_dependencies.py",
+            "phase=fastapi-extra-install",
+            ".[fastapi]",
             "python -m compileall src tests",
             "python -m unittest discover -s tests -v",
-            "python /test-support/installed_verification_dependencies.py",
+            "python /test-support/installed_fastapi_dependencies.py",
         )
         offsets: list[int] = []
         start = 0
@@ -144,8 +147,13 @@ class PackageGateContractTests(unittest.TestCase):
             'VERIFICATION_CONTAINER_NAME="cpk-server-sdk-verification-${RUN_ID}"',
             source,
         )
+        self.assertIn(
+            'FASTAPI_CONTAINER_NAME="cpk-server-sdk-fastapi-${RUN_ID}"',
+            source,
+        )
         self.assertIn('docker rm -f "$BASE_CONTAINER_NAME"', source)
         self.assertIn('docker rm -f "$VERIFICATION_CONTAINER_NAME"', source)
+        self.assertIn('docker rm -f "$FASTAPI_CONTAINER_NAME"', source)
         self.assertIn('docker image rm -f "$IMAGE_NAME"', source)
         self.assertNotIn("docker system prune", source)
         self.assertNotIn("docker container prune", source)
@@ -171,6 +179,11 @@ class PackageGateContractTests(unittest.TestCase):
             "./test_support/",
             source,
         )
+        self.assertIn(
+            "COPY test_support/installed_fastapi_dependencies.py "
+            "./test_support/",
+            source,
+        )
         self.assertNotIn("pytest", source)
         self.assertTrue(
             {
@@ -184,19 +197,20 @@ class PackageGateContractTests(unittest.TestCase):
                 "*.egg-info",
                 "test_support/*",
                 "!test_support/installed_verification_dependencies.py",
+                "!test_support/installed_fastapi_dependencies.py",
             }.issubset(ignored)
         )
 
     def test_each_package_run_fails_fast_before_import_smoke(self) -> None:
         source = self._read("test.sh")
 
-        self.assertEqual(source.count("sh -ceu '"), 2)
+        self.assertEqual(source.count("sh -ceu '"), 3)
 
     def test_installed_import_proves_context_and_forbidden_dependencies(self) -> None:
         gate = self._read("test.sh")
         source = self._read("test_support/installed_import.py")
 
-        self.assertEqual(gate.count("python /test-support/installed_import.py"), 2)
+        self.assertEqual(gate.count("python /test-support/installed_import.py"), 3)
         for expected in (
             "control_plane_kit_server_sdk.__version__",
             "ControlPlaneInvocationContext",
@@ -235,6 +249,33 @@ class PackageGateContractTests(unittest.TestCase):
             "import jwt",
             "import cryptography",
             "verification dependencies import ok",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, source)
+
+    def test_installed_fastapi_probe_is_exact_and_root_lazy(self) -> None:
+        gate = self._read("test.sh")
+        source = self._read("test_support/installed_fastapi_dependencies.py")
+
+        self.assertIn(
+            "python /test-support/installed_fastapi_dependencies.py",
+            gate,
+        )
+        for expected in (
+            'version("PyJWT")',
+            'version("cryptography")',
+            'version("fastapi")',
+            '"2.13.0"',
+            '"50.0.0"',
+            '"0.141.1"',
+            "import control_plane_kit_server_sdk",
+            '"fastapi" not in sys.modules',
+            '"starlette" not in sys.modules',
+            '"anyio" not in sys.modules',
+            '"jwt" not in sys.modules',
+            '"cryptography" not in sys.modules',
+            "import control_plane_kit_server_sdk._fastapi_variable_routes",
+            "fastapi dependencies import ok",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, source)
