@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import base64
 from dataclasses import replace
 import importlib
@@ -832,9 +833,25 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
             401,
         )
 
-        huge_variable = "x" * (MAX_PATH_BYTES + 1)
+        prefix = "/__control/variables/"
+        exact_path = prefix + "x" * (MAX_PATH_BYTES - len(prefix))
+        over_path = prefix + "x" * (MAX_PATH_BYTES - len(prefix) + 1)
+        exact_response = self._call(
+            app,
+            "GET",
+            exact_path,
+            headers=[self._authorization(read)],
+        )
+        self.assertEqual(len(exact_path.encode("ascii")), MAX_PATH_BYTES)
+        self.assert_error(exact_response, 400)
+        self.assertEqual(len(over_path.encode("ascii")), MAX_PATH_BYTES + 1)
         self.assert_error(
-            self._read(app, read, variable=huge_variable),
+            self._call(
+                app,
+                "GET",
+                over_path,
+                headers=[self._authorization(read)],
+            ),
             413,
         )
         self.assertEqual(variable.read_calls, 0)
@@ -1087,8 +1104,39 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
     def test_source_has_one_explicit_threadpool_handoff(self) -> None:
         module = self._module()
         source = Path(module.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=module.__file__)
+        imported = [
+            alias.asname or alias.name
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom)
+            and node.module == "fastapi.concurrency"
+            for alias in node.names
+            if alias.name == "run_in_threadpool"
+        ]
+        awaited_calls = [
+            node.value.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Await)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+        ]
+        called_names = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        called_attributes = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
 
-        self.assertEqual(source.count("run_in_threadpool("), 1)
+        self.assertEqual(imported, ["run_in_threadpool"])
+        self.assertEqual(awaited_calls.count("run_in_threadpool"), 1)
+        self.assertTrue(
+            {"to_thread", "run_in_executor", "run_sync", "iterate_in_threadpool"}
+            .isdisjoint(called_names | called_attributes)
+        )
 
     def test_verifier_through_variable_execution_runs_off_event_loop(self) -> None:
         clock = ThreadRecordingClock()
