@@ -63,6 +63,7 @@ MAX_SURFACE_CREDENTIAL_BYTES = 4_096
 MAX_SURFACE_HEADER_SEGMENT_BYTES = 512
 MAX_SURFACE_PAYLOAD_SEGMENT_BYTES = 3_840
 MAX_SURFACE_SIGNATURE_SEGMENT_BYTES = 128
+_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -1481,12 +1482,12 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         request: NodeControlSurfaceReadRequest,
         *,
         verifier=None,
-        route_kind: object | None = None,
+        route_kind: object = _UNSET,
         candidate: object = None,
     ) -> NodeControlSurfaceReadRequest:
         return (verifier or self._verifier()).admit(
             token,
-            route_kind=request.kind if route_kind is None else route_kind,
+            route_kind=request.kind if route_kind is _UNSET else route_kind,
             candidate=candidate,
         )
 
@@ -1514,7 +1515,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         token: object,
         request: NodeControlSurfaceReadRequest,
         *,
-        route_kind: object | None = None,
+        route_kind: object = _UNSET,
         candidate: object = None,
     ) -> None:
         calls = {"jwt": 0, "grant": 0, "snapshot": 0, "clock": 0}
@@ -1578,6 +1579,51 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             hasattr(root, "Ed25519WorkloadNodeControlSurfaceReadVerifier")
         )
 
+    def test_constructor_and_stateless_shape_are_exact_slotted_and_redacted(self) -> None:
+        verifier = self._verifier()
+        verifier_type = type(verifier)
+        self.assertEqual(
+            verifier_type.__slots__,
+            ("_holder", "_expected_issuer", "_expected_audience", "_clock"),
+        )
+        self.assertFalse(hasattr(verifier, "__dict__"))
+        self.assertEqual(
+            repr(verifier),
+            "Ed25519WorkloadNodeControlSurfaceReadVerifier()",
+        )
+
+        command_holder = AtomicWorkloadNodeControlVerifierKeySet(
+            WorkloadNodeControlVerifierKeySet(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+                (self.key_a,),
+            )
+        )
+        for keyword, value in (
+            ("holder", command_holder),
+            ("issuer", SensitiveText(ISSUER)),
+            ("audience", SensitiveText(AUDIENCE)),
+            ("clock", SensitiveCandidate()),
+        ):
+            with self.subTest(keyword=keyword):
+                arguments = {
+                    "holder": self._holder(self.key_a),
+                    "issuer": ISSUER,
+                    "audience": AUDIENCE,
+                    "clock": lambda: NOW,
+                }
+                arguments[keyword] = value
+                with self.assertRaises((TypeError, ValueError)) as raised:
+                    verifier_type(
+                        arguments["holder"],
+                        expected_issuer=arguments["issuer"],
+                        expected_audience=arguments["audience"],
+                        clock=arguments["clock"],
+                    )
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertIsNone(raised.exception.__context__)
+                self.assertNotIn("nested-secret", str(raised.exception))
+                self.assertNotIn("candidate-secret", str(raised.exception))
+
     def test_both_read_kinds_return_only_the_exact_reconstructed_request(self) -> None:
         for kind in NodeControlSurfaceReadKind:
             with self.subTest(kind=kind):
@@ -1593,6 +1639,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         request = _surface_request()
         token = _surface_token(self.private_a, _surface_grant(request))
         for route_kind in (
+            None,
             "capabilities",
             NodeControlOperation.READ_STATE,
             SensitiveCandidate(),
@@ -1683,22 +1730,30 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         self.assertEqual(self._admit(token, request, verifier=verifier), request)
 
         independent_edges = (
-            b"A" * (MAX_SURFACE_CREDENTIAL_BYTES + 1),
-            b"A" * (MAX_SURFACE_HEADER_SEGMENT_BYTES + 1)
-            + b".e30."
-            + b"A" * 86,
-            b"e30."
-            + b"A" * (MAX_SURFACE_PAYLOAD_SEGMENT_BYTES + 1)
+            b"A" * MAX_SURFACE_HEADER_SEGMENT_BYTES
             + b"."
-            + b"A" * 86,
-            b"e30.e30." + b"A" * (MAX_SURFACE_SIGNATURE_SEGMENT_BYTES + 1),
+            + b"A" * 3_480
+            + b"."
+            + b"A" * MAX_SURFACE_SIGNATURE_SEGMENT_BYTES,
+            b"A" * 514 + b".e30." + b"A" * 86,
+            b"e30." + b"A" * 3_842 + b"." + b"A" * 86,
+            b"e30.e30." + b"A" * 130,
         )
         for identity, candidate_token in enumerate(independent_edges):
             with self.subTest(edge=identity):
-                self._assert_before_maintained_admission(
-                    candidate_token,
-                    request,
-                )
+                decode_calls = 0
+
+                def forbidden_decode(*_args: object, **_kwargs: object) -> bytes:
+                    nonlocal decode_calls
+                    decode_calls += 1
+                    raise AssertionError("base64 decoding was reached")
+
+                with _replaced_attribute(base64, "b64decode", forbidden_decode):
+                    self._assert_before_maintained_admission(
+                        candidate_token,
+                        request,
+                    )
+                self.assertEqual(decode_calls, 0)
 
     def test_compact_and_structural_profiles_reject_before_maintained_admission(self) -> None:
         request = _surface_request()
@@ -1719,6 +1774,165 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         payload = _surface_payload(grant)
         grant_descriptor = grant.descriptor()
         target_descriptor = grant.target.descriptor()
+
+        header_bytes = _json_with_pad_bits(header)
+        payload_bytes = _json_with_pad_bits(payload)
+        canonical = _signed_compact(
+            self.private_a,
+            header_bytes=header_bytes,
+            payload_bytes=payload_bytes,
+        )
+        header_segment, payload_segment, signature_segment = canonical.split(b".")
+        noncanonical_header = _noncanonical_tail(header_segment)
+        noncanonical_payload = _noncanonical_tail(payload_segment)
+        noncanonical_tokens = (
+            noncanonical_header
+            + b"."
+            + payload_segment
+            + b"."
+            + _b64url(
+                self.private_a.sign(
+                    noncanonical_header + b"." + payload_segment
+                )
+            ),
+            header_segment
+            + b"."
+            + noncanonical_payload
+            + b"."
+            + _b64url(
+                self.private_a.sign(
+                    header_segment + b"." + noncanonical_payload
+                )
+            ),
+            b".".join(
+                (
+                    header_segment,
+                    payload_segment,
+                    _noncanonical_tail(signature_segment),
+                )
+            ),
+        )
+        for identity, token in enumerate(noncanonical_tokens):
+            with self.subTest(noncanonical=identity):
+                self._assert_before_maintained_admission(token, request)
+
+        missing_unknown_wrong: list[tuple[bytes, bytes]] = [
+            (
+                _json_value({key: value for key, value in header.items() if key != "typ"}),
+                _json_value(payload),
+            ),
+            (_json_value({**header, "unknown": 1}), _json_value(payload)),
+            (b"[]", _json_value(payload)),
+            (_json_value({**header, "kid": 7}), _json_value(payload)),
+            (
+                _json_value(header),
+                _json_value({key: value for key, value in payload.items() if key != "jti"}),
+            ),
+            (_json_value(header), _json_value({**payload, "unknown": 1})),
+            (_json_value(header), b"[]"),
+            (_json_value(header), _json_value({**payload, "iss": 7})),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            key: value
+                            for key, value in grant_descriptor.items()
+                            if key != "request_digest"
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {**grant_descriptor, "unknown": 1},
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value({**payload, SURFACE_PAYLOAD_KEY: []}),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "issued_at": "100",
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": {
+                                key: value
+                                for key, value in target_descriptor.items()
+                                if key != "node_id"
+                            },
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": {**target_descriptor, "unknown": 1},
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": [],
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": {**target_descriptor, "node_id": 7},
+                        },
+                    }
+                ),
+            ),
+        ]
+        for identity, (candidate_header, candidate_payload) in enumerate(
+            missing_unknown_wrong
+        ):
+            with self.subTest(closed_profile=identity):
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=candidate_header,
+                    payload_bytes=candidate_payload,
+                )
+                self._assert_before_maintained_admission(token, request)
+
         duplicates: list[tuple[bytes, bytes]] = []
         for key in header:
             duplicates.append(
@@ -1878,7 +2092,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         request = _surface_request()
         grant = _surface_grant(request)
         original_decode = jwt.decode
-        cases: list[tuple[bytes, object]] = []
+        cases: list[tuple[bytes, object, str, str]] = []
 
         cases.append(
             (
@@ -1887,7 +2101,9 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                     grant,
                     header_changes={"kid": self.key_b.key_id},
                 ),
-                self._verifier(holder=self._holder(self.key_a, self.key_b)),
+                self._holder(self.key_a, self.key_b),
+                ISSUER,
+                AUDIENCE,
             )
         )
         for field, outer_value in (
@@ -1898,10 +2114,6 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             ("exp", 201),
             ("jti", "outer-jti"),
         ):
-            verifier = self._verifier(
-                issuer=outer_value if field == "iss" else ISSUER,
-                audience=outer_value if field == "aud" else AUDIENCE,
-            )
             cases.append(
                 (
                     _surface_token(
@@ -1909,32 +2121,297 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                         grant,
                         payload_changes={field: outer_value},
                     ),
-                    verifier,
+                    self._holder(self.key_a),
+                    outer_value if field == "iss" else ISSUER,
+                    outer_value if field == "aud" else AUDIENCE,
                 )
             )
 
-        for identity, (token, verifier) in enumerate(cases):
-            calls = 0
+        verification_module = self._module()
+        for identity, (token, holder, issuer, audience) in enumerate(cases):
+            calls = {"jwt": 0, "clock": 0, "request": 0}
 
             def counted_decode(*args: object, **kwargs: object) -> object:
-                nonlocal calls
-                calls += 1
+                calls["jwt"] += 1
                 return original_decode(*args, **kwargs)
+
+            def forbidden_clock() -> int:
+                calls["clock"] += 1
+                raise AssertionError("trusted clock was reached")
+
+            def forbidden_request(*_args: object, **_kwargs: object) -> object:
+                calls["request"] += 1
+                raise AssertionError("request construction was reached")
+
+            verifier = self._verifier(
+                holder=holder,
+                issuer=issuer,
+                audience=audience,
+                clock=forbidden_clock,
+            )
 
             with self.subTest(identity=identity), _replaced_attribute(
                 jwt,
                 "decode",
                 counted_decode,
+            ), _replaced_attribute(
+                verification_module,
+                "NodeControlSurfaceReadRequest",
+                forbidden_request,
             ):
                 self._assert_rejected(
                     lambda: self._admit(token, request, verifier=verifier)
                 )
-                self.assertEqual(calls, 1)
+                self.assertEqual(calls, {"jwt": 1, "clock": 0, "request": 0})
+
+    def test_maintained_admission_options_key_rotation_and_failure_order_are_exact(self) -> None:
+        request_a = _surface_request()
+        grant_a = _surface_grant(request_a)
+        token_a = _surface_token(self.private_a, grant_a)
+        holder = self._holder(self.key_a)
+        verifier = self._verifier(holder=holder)
+        captured: list[tuple[tuple[object, ...], dict[str, object]]] = []
+        original_decode = jwt.decode
+
+        def captured_decode(*args: object, **kwargs: object) -> object:
+            captured.append((args, kwargs))
+            return original_decode(*args, **kwargs)
+
+        with _replaced_attribute(jwt, "decode", captured_decode):
+            self.assertEqual(
+                self._admit(token_a, request_a, verifier=verifier),
+                request_a,
+            )
+        self.assertEqual(len(captured), 1)
+        args, kwargs = captured[0]
+        self.assertIs(args[0], token_a)
+        self.assertEqual(args[1], self.key_a.public_key_pem)
+        self.assertEqual(kwargs["algorithms"], ["EdDSA"])
+        self.assertEqual(kwargs["issuer"], ISSUER)
+        self.assertEqual(kwargs["audience"], AUDIENCE)
+        self.assertEqual(
+            kwargs["options"],
+            {
+                "require": ["iss", "aud", "iat", "nbf", "exp", "jti"],
+                "verify_exp": False,
+                "verify_nbf": False,
+                "verify_iat": False,
+                "strict_aud": True,
+            },
+        )
+
+        request_b = _surface_request(
+            NodeControlSurfaceReadKind.STATUS,
+            request_id="surface-read-b",
+        )
+        grant_b = _surface_grant(
+            request_b,
+            key_id=self.key_b.key_id,
+            jti="surface-grant-b",
+        )
+        token_b = _surface_token(self.private_b, grant_b)
+        holder.replace(self._snapshot(self.key_a, self.key_b))
+        self.assertEqual(self._admit(token_a, request_a, verifier=verifier), request_a)
+        self.assertEqual(self._admit(token_b, request_b, verifier=verifier), request_b)
+        holder.replace(self._snapshot(self.key_b))
+        self._assert_rejected(
+            lambda: self._admit(token_a, request_a, verifier=verifier)
+        )
+        self.assertEqual(self._admit(token_b, request_b, verifier=verifier), request_b)
+
+        malformed = DelegationPublicKey(
+            self.key_a.key_id,
+            DelegationKeyAlgorithm.ED25519,
+            "-----BEGIN PUBLIC KEY-----\nnot-cryptographic-material\n"
+            "-----END PUBLIC KEY-----\n",
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(holder=self._holder(malformed)),
+            )
+        )
+        rsa_private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        rsa_pem = rsa_private.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("ascii")
+        rsa_material = DelegationPublicKey(
+            self.key_a.key_id,
+            DelegationKeyAlgorithm.ED25519,
+            rsa_pem,
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(holder=self._holder(rsa_material)),
+            )
+        )
+        wrong_purpose = self._snapshot(self.key_a)
+        object.__setattr__(
+            wrong_purpose,
+            "purpose",
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+        )
+        _, surface_holder_type = self._key_types()
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(
+                    holder=surface_holder_type(wrong_purpose)
+                ),
+            )
+        )
+
+        calls = {"jwt": 0, "grant": 0, "clock": 0}
+
+        def counted_jwt(*_args: object, **_kwargs: object) -> object:
+            calls["jwt"] += 1
+            raise AssertionError("maintained signature admission was reached")
+
+        def counted_grant(*_args: object, **_kwargs: object) -> object:
+            calls["grant"] += 1
+            raise AssertionError("signed grant decoding was reached")
+
+        def counted_clock() -> int:
+            calls["clock"] += 1
+            raise AssertionError("trusted clock was reached")
+
+        unknown = _surface_token(
+            self.private_a,
+            grant_a,
+            header_changes={"kid": "unknown-key"},
+        )
+        with _replaced_attribute(jwt, "decode", counted_jwt), _replaced_attribute(
+            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            "decode",
+            counted_grant,
+        ):
+            self._assert_rejected(
+                lambda: self._admit(
+                    unknown,
+                    request_a,
+                    verifier=self._verifier(
+                        holder=self._holder(self.key_a),
+                        clock=counted_clock,
+                    ),
+                )
+            )
+        self.assertEqual(calls, {"jwt": 0, "grant": 0, "clock": 0})
+
+        calls = {"jwt": 0, "grant": 0, "clock": 0}
+
+        def failing_jwt(*args: object, **kwargs: object) -> object:
+            calls["jwt"] += 1
+            return original_decode(*args, **kwargs)
+
+        with _replaced_attribute(jwt, "decode", failing_jwt), _replaced_attribute(
+            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            "decode",
+            counted_grant,
+        ):
+            self._assert_rejected(
+                lambda: self._admit(
+                    _surface_token(self.private_b, grant_a),
+                    request_a,
+                    verifier=self._verifier(
+                        holder=self._holder(self.key_a),
+                        clock=counted_clock,
+                    ),
+                )
+            )
+        self.assertEqual(calls, {"jwt": 1, "grant": 0, "clock": 0})
+
+    def test_foreign_authority_families_never_substitute(self) -> None:
+        request = _surface_request()
+        shared_private = ed25519.Ed25519PrivateKey.generate()
+        shared_key = DelegationPublicKey(
+            "shared-key",
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(shared_private),
+        )
+        verifier = self._verifier(holder=self._holder(shared_key))
+        command_requests = (
+            _request(NodeControlOperation.READ_STATE),
+            _request(NodeControlOperation.APPLY_COMMAND),
+        )
+        foreign = [
+            _token(
+                shared_private,
+                _grant(command_request, key_id="shared-key"),
+            )
+            for command_request in command_requests
+        ]
+        outer = {
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+            "iat": 100,
+            "nbf": 100,
+            "exp": 200,
+            "jti": "foreign-grant",
+        }
+        for token_type, member in (
+            ("CPK-GATEWAY-PROBE+JWT", "gateway_probe_grant"),
+            ("CPK-GATEWAY-TRANSIT+JWT", "gateway_transit_grant"),
+        ):
+            foreign.append(
+                _signed_compact(
+                    shared_private,
+                    header_bytes=_json_value(
+                        {"alg": "EdDSA", "kid": "shared-key", "typ": token_type}
+                    ),
+                    payload_bytes=_json_value(
+                        {**outer, member: {"authority": "foreign"}}
+                    ),
+                )
+            )
+        foreign.extend((b"operator-bearer", b"static-bearer"))
+
+        for identity, token in enumerate(foreign):
+            with self.subTest(authority=identity):
+                self._assert_rejected(
+                    lambda token=token: self._admit(
+                        token,
+                        request,
+                        verifier=verifier,
+                    )
+                )
 
     def test_exact_request_binding_route_time_one_clock_and_no_replay_state(self) -> None:
         request = _surface_request()
-        mismatches = (
-            _surface_grant(request, target=_target(node_id=_reference(NodeControlGraphReferenceRole.NODE, "other"))),
+        target_mismatches = (
+            _target(
+                workspace_id=_reference(
+                    NodeControlGraphReferenceRole.WORKSPACE,
+                    "other-workspace",
+                )
+            ),
+            _target(
+                graph_revision=_reference(
+                    NodeControlGraphReferenceRole.GRAPH_REVISION,
+                    "other-revision",
+                )
+            ),
+            _target(
+                node_id=_reference(
+                    NodeControlGraphReferenceRole.NODE,
+                    "other-node",
+                )
+            ),
+            _target(
+                provider_socket_name=_reference(
+                    NodeControlGraphReferenceRole.PROVIDER_SOCKET,
+                    "other-socket",
+                )
+            ),
+        )
+        mismatches = tuple(
+            _surface_grant(request, target=target)
+            for target in target_mismatches
+        ) + (
             _surface_grant(request, kind=NodeControlSurfaceReadKind.STATUS),
             _surface_grant(
                 request,
@@ -1957,6 +2434,14 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
 
         valid_grant = _surface_grant(request)
         token = _surface_token(self.private_a, valid_grant)
+        self.assertEqual(
+            self._admit(
+                token,
+                request,
+                verifier=self._verifier(clock=lambda: valid_grant.not_before),
+            ),
+            request,
+        )
         clock_calls = 0
 
         def clock() -> int:
@@ -1985,6 +2470,27 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                 route_kind=NodeControlSurfaceReadKind.STATUS,
             )
         )
+
+        for field, value in (
+            ("profile", "other-surface-read-grant.v1"),
+            ("canonicalization", "other-canonicalization.v1"),
+        ):
+            descriptor = valid_grant.descriptor()
+            descriptor[field] = value
+            payload = _surface_payload(valid_grant)
+            payload[SURFACE_PAYLOAD_KEY] = descriptor
+            invalid_token = _signed_compact(
+                self.private_a,
+                header_bytes=_json_value(_surface_header(valid_grant.key_id)),
+                payload_bytes=_json_value(payload),
+            )
+            with self.subTest(field=field):
+                self._assert_rejected(
+                    lambda invalid_token=invalid_token: self._admit(
+                        invalid_token,
+                        request,
+                    )
+                )
 
     def test_one_admission_uses_one_complete_surface_key_snapshot(self) -> None:
         request = _surface_request()
@@ -2025,7 +2531,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
 
     def test_representations_errors_and_source_exclude_sensitive_or_outer_work(self) -> None:
         request = _surface_request()
-        token = _surface_token(self.private_b, _surface_grant(request))
+        token = _surface_token(self.private_a, _surface_grant(request))
         holder = self._holder(self.key_a)
         verifier = self._verifier(holder=holder)
         key_set = holder.snapshot()
@@ -2046,34 +2552,68 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             ):
                 self.assertNotIn(marker, rendered)
 
-        error = self._assert_rejected(
-            lambda: self._admit(
-                token,
-                request,
-                verifier=verifier,
-                candidate=SensitiveCandidate(),
+        errors: list[BaseException] = []
+        errors.append(
+            self._assert_rejected(
+                lambda: self._admit(
+                    token,
+                    request,
+                    verifier=verifier,
+                    candidate=SensitiveCandidate(),
+                )
             )
         )
-        rendered_error = str(error) + repr(error)
-        self.assertLessEqual(len(rendered_error.encode("utf-8")), 256)
-        for marker in (
-            token.decode("ascii"),
-            "surface-grant-1",
-            self.key_a.key_id,
-            self.key_a.fingerprint_sha256,
-            self.key_a.public_key_pem,
-            ISSUER,
-            AUDIENCE,
-            "candidate-secret",
-            "Traceback",
-            "InvalidSignature",
-            request.request_id,
-            request.declaration_identity.value,
-            request.target.node_id.value,
-        ):
-            self.assertNotIn(marker, rendered_error)
 
-        source = (PACKAGE_ROOT / "verification.py").read_text(encoding="utf-8")
+        def failing_jwt(*_args: object, **_kwargs: object) -> object:
+            raise RuntimeError(
+                "InvalidSignature authorization: Bearer crypto-secret"
+            )
+
+        with _replaced_attribute(jwt, "decode", failing_jwt):
+            errors.append(
+                self._assert_rejected(
+                    lambda: self._admit(token, request, verifier=verifier)
+                )
+            )
+
+        def failing_grant(*_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("credential=grant-secret target=router")
+
+        with _replaced_attribute(
+            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            "decode",
+            failing_grant,
+        ):
+            errors.append(
+                self._assert_rejected(
+                    lambda: self._admit(token, request, verifier=verifier)
+                )
+            )
+
+        for error in errors:
+            rendered_error = str(error) + repr(error)
+            self.assertLessEqual(len(rendered_error.encode("utf-8")), 256)
+            for marker in (
+                token.decode("ascii"),
+                "surface-grant-1",
+                self.key_a.key_id,
+                self.key_a.fingerprint_sha256,
+                self.key_a.public_key_pem,
+                ISSUER,
+                AUDIENCE,
+                "candidate-secret",
+                "crypto-secret",
+                "grant-secret",
+                "Traceback",
+                "InvalidSignature",
+                request.request_id,
+                request.declaration_identity.value,
+                request.target.node_id.value,
+            ):
+                self.assertNotIn(marker, rendered_error)
+
+        module_path = PACKAGE_ROOT / "verification.py"
+        source = module_path.read_text(encoding="utf-8")
         for excluded in (
             "fastapi",
             "NodeControlSurfaceCapabilitiesResult",
@@ -2083,6 +2623,27 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             "_replay",
         ):
             self.assertNotIn(excluded, source)
+        tree = ast.parse(source, filename=str(module_path))
+        imported_roots: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_roots.update(
+                    alias.name.split(".", 1)[0] for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_roots.add(node.module.split(".", 1)[0])
+        self.assertTrue(
+            imported_roots.isdisjoint(
+                {
+                    "control_plane_kit_operations",
+                    "control_plane_kit_servers",
+                    "fastapi",
+                    "psycopg",
+                    "docker",
+                    "cloudflare",
+                }
+            )
+        )
 
     def test_docs_describe_stateless_credential_admission_and_1507_handoff(self) -> None:
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")

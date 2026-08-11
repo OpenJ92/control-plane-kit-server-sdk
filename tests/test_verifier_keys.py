@@ -191,6 +191,23 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
             ("fingerprint_sha256", SensitiveText("f" * 64)),
         ):
             with self.subTest(field_name=field_name):
+                mutated = _key(f"surface-{field_name}")
+                object.__setattr__(mutated, field_name, candidate)
+                with self.assertRaisesRegex(
+                    TypeError,
+                    "surface-read verifier public key fields must use exact core types",
+                ):
+                    key_set_type(
+                        DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                        (mutated,),
+                    )
+
+        for field_name, candidate in (
+            ("algorithm", object()),
+            ("public_key_pem", SensitiveText(_pem("sensitive"))),
+            ("fingerprint_sha256", SensitiveText("f" * 64)),
+        ):
+            with self.subTest(field_name=field_name):
                 mutated = _key("key-b")
                 object.__setattr__(mutated, field_name, candidate)
                 with self.assertRaisesRegex(
@@ -527,6 +544,156 @@ class SurfaceReadVerifierKeySetTests(unittest.TestCase):
         self.assertIs(surface_holder.snapshot(), surface)
         self.assertIs(command_holder.snapshot(), command)
 
+    def test_surface_key_set_inherits_exact_public_material_admission(self) -> None:
+        key_set_type, _ = self._types()
+        key = _key("surface-key")
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "surface-read verifier key set purpose must be DelegationKeyPurpose",
+        ):
+            key_set_type("workload-node-control-surface-read", (key,))
+        with self.assertRaisesRegex(
+            TypeError,
+            "surface-read verifier public_keys must be a tuple",
+        ):
+            key_set_type(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                [key],
+            )
+
+        class PublicKeySubclass(DelegationPublicKey):
+            pass
+
+        subclass = PublicKeySubclass(
+            "surface-subclass",
+            key.algorithm,
+            _pem("subclass"),
+        )
+        with self.assertRaisesRegex(
+            TypeError,
+            "surface-read verifier keys must be exact DelegationPublicKey values",
+        ):
+            key_set_type(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                (subclass,),
+            )
+
+        malformed: list[DelegationPublicKey] = []
+        extra = _key("surface-extra")
+        object.__setattr__(extra, "unexpected_material", SensitiveCandidate())
+        malformed.append(extra)
+        missing = _key("surface-missing")
+        object.__delattr__(missing, "fingerprint_sha256")
+        malformed.append(missing)
+        bad_id = _key("surface-id")
+        object.__setattr__(bad_id, "key_id", "NOT-CANONICAL")
+        malformed.append(bad_id)
+        bad_fingerprint = _key("surface-fingerprint")
+        object.__setattr__(bad_fingerprint, "fingerprint_sha256", "0" * 64)
+        malformed.append(bad_fingerprint)
+        bad_pem = _key("surface-pem")
+        object.__setattr__(bad_pem, "public_key_pem", bad_pem.public_key_pem.rstrip("\n"))
+        malformed.append(bad_pem)
+        for identity, candidate in enumerate(malformed):
+            with self.subTest(malformed=identity):
+                with self.assertRaises(TypeError) as raised:
+                    key_set_type(
+                        DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                        (candidate,),
+                    )
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertIsNone(raised.exception.__context__)
+                self.assertNotIn("candidate-secret", str(raised.exception))
+
+        nested = _key("surface-nested")
+        object.__setattr__(nested, "key_id", SensitiveText("surface-nested"))
+        with self.assertRaises(TypeError) as raised:
+            key_set_type(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                (nested,),
+            )
+        self.assertEqual(
+            str(raised.exception),
+            "surface-read verifier public key fields must use exact core types",
+        )
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        self.assertNotIn("nested-key-secret", str(raised.exception))
+
+        duplicate_id = (
+            _key("surface-duplicate", "first"),
+            _key("surface-duplicate", "second"),
+        )
+        duplicate_fingerprint = (
+            _key("surface-a", "shared"),
+            _key("surface-b", "shared"),
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "surface-read verifier key ids must be unique",
+        ):
+            key_set_type(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                duplicate_id,
+            )
+        with self.assertRaisesRegex(
+            ValueError,
+            "surface-read verifier key fingerprints must be unique",
+        ):
+            key_set_type(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                duplicate_fingerprint,
+            )
+
+    def test_surface_holder_rejects_invalid_values_and_preserves_snapshot(self) -> None:
+        key_set_type, holder_type = self._types()
+        accepted = self._key_set(_key("surface-key"))
+        holder = holder_type(accepted)
+
+        class KeySetSubclass(key_set_type):
+            pass
+
+        subclass = KeySetSubclass(
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+            (_key("surface-subclass"),),
+        )
+        for candidate in (
+            SensitiveCandidate(),
+            ExplodingReprCandidate(),
+            subclass,
+        ):
+            with self.subTest(candidate=type(candidate).__name__):
+                with self.assertRaises(TypeError):
+                    holder_type(candidate)
+                with self.assertRaises(TypeError) as raised:
+                    holder.replace(candidate)
+                self.assertEqual(
+                    str(raised.exception),
+                    "atomic surface-read verifier key set must be "
+                    "WorkloadNodeControlSurfaceReadVerifierKeySet",
+                )
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertIsNone(raised.exception.__context__)
+                self.assertNotIn("candidate-secret", str(raised.exception))
+                self.assertIs(holder.snapshot(), accepted)
+
+    def test_surface_replace_lock_body_is_one_reference_publication(self) -> None:
+        _, holder_type = self._types()
+        tree = ast.parse(textwrap.dedent(inspect.getsource(holder_type.replace)))
+        with_nodes = [node for node in ast.walk(tree) if isinstance(node, ast.With)]
+
+        self.assertEqual(len(with_nodes), 1)
+        self.assertEqual(len(with_nodes[0].body), 1)
+        assignment = with_nodes[0].body[0]
+        self.assertIsInstance(assignment, ast.Assign)
+        self.assertFalse(
+            any(
+                isinstance(node, (ast.Call, ast.Compare))
+                for node in ast.walk(assignment)
+            )
+        )
+
     def test_surface_holder_rotation_is_atomic_and_repr_redacted(self) -> None:
         _, holder_type = self._types()
         key_a = _key("surface-key-a")
@@ -539,6 +706,8 @@ class SurfaceReadVerifierKeySetTests(unittest.TestCase):
         holder = holder_type(snapshots[0])
         barrier = Barrier(6)
         observed: list[object] = []
+        published: list[object] = []
+        failures: list[BaseException] = []
 
         def read_many() -> None:
             barrier.wait()
@@ -547,7 +716,10 @@ class SurfaceReadVerifierKeySetTests(unittest.TestCase):
 
         def publish(candidate: object) -> None:
             barrier.wait()
-            self.assertIs(holder.replace(candidate), candidate)
+            try:
+                published.append(holder.replace(candidate))
+            except BaseException as error:
+                failures.append(error)
 
         threads = [Thread(target=read_many) for _ in range(3)]
         threads.extend(
@@ -562,8 +734,13 @@ class SurfaceReadVerifierKeySetTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
 
         accepted = {id(snapshot) for snapshot in snapshots}
+        self.assertEqual(failures, [])
         self.assertTrue(observed)
         self.assertTrue({id(value) for value in observed}.issubset(accepted))
+        self.assertEqual(
+            {id(value) for value in published},
+            {id(snapshots[1]), id(snapshots[2])},
+        )
         for rendered in (repr(snapshots[1]), repr(holder)):
             for key in (key_a, key_b):
                 self.assertNotIn(key.key_id, rendered)
