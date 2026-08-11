@@ -510,6 +510,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
                 "PyJWT==2.13.0",
                 "cryptography==50.0.0",
                 "fastapi==0.141.1",
+                "starlette==1.6.0",
             ],
         )
         root = importlib.import_module("control_plane_kit_server_sdk")
@@ -1219,7 +1220,7 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
 
         self.assertEqual(
             [name for name, _line in codec_calls],
-            ["_build_variable_routes"],
+            ["_build_variable_registry"],
         )
 
     def test_verifier_through_variable_execution_runs_off_event_loop(self) -> None:

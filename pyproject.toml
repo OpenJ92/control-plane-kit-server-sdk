@@ -21,6 +21,7 @@ fastapi = [
   "PyJWT==2.13.0",
   "cryptography==50.0.0",
   "fastapi==0.141.1",
+  "starlette==1.6.0",
 ]
 
 [project.urls]

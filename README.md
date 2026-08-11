@@ -31,16 +31,31 @@ dependency availability only; #1498 owns the closed signed-grant verifier.
 These exact pins constrain the two named direct dependencies only.
 They do not lock transitive dependency versions, artifact hashes, or publisher attestations.
 
-FastAPI applications may install the private adapter dependency set with:
+FastAPI applications may install the public optional adapter dependency set with:
 
 ```bash
 python -m pip install ".[fastapi]"
 ```
 
-That extra contains the same verification pair plus `fastapi==0.141.1`. It
-supports the internal authenticated variable routes implemented by #1551. The
-SDK root remains lazy and framework-neutral; #1552 owns the one public installer
-that will compose variable routes with stateless capability and status reads.
+That extra contains the same verification pair plus `fastapi==0.141.1` and
+`starlette==1.6.0`. It supports the one public, optional FastAPI composition:
+
+```python
+from control_plane_kit_server_sdk.fastapi import install_cpk_control_routes
+
+install_cpk_control_routes(
+    app,
+    target=target,
+    declaration=declaration,
+    variables=variables,
+    command_verifier=command_verifier,
+    surface_read_verifier=surface_read_verifier,
+)
+```
+
+The installer validates and constructs the complete four-route CPK surface
+before replacing the host route list once. The SDK root remains lazy and
+framework-neutral.
 Authenticated APPLY invokes the caller-supplied variable and can mutate
 process-local or durable workload-owned state. The SDK adapter owns no storage,
 transaction, graph authority, or provider client; #1506 replay remains its
@@ -191,11 +206,10 @@ the protected header, payload, and signature segments are bounded to 512,
 It is stateless: the same valid credential may be admitted again during its
 bounded lifetime. The verifier owns no private key, no HTTP framing, no
 registry lookup, no registry state, no result construction, and no replay
-store. Issue #1507 owns
-the HTTP adapter, live surface registry, and execution of the admitted read.
-That adapter must safely extract and bound route/body inputs and prove
-bodylessness before calling admission; successful admission must precede live
-registry access and result production.
+store. The #1507 FastAPI adapter owns HTTP extraction, the installed-variable
+snapshot, and execution of the admitted read. It bounds route/body inputs and
+proves bodylessness before calling admission; successful admission precedes
+local declaration/registry access and result production.
 
 ## Validation
 
@@ -230,5 +244,5 @@ checkout. Merely having a sibling checkout does not change what is tested.
 
 The repository does not own control-plane operations stores, cpk-server,
 Docker interpreters, server products, provider clients, or application state.
-FastAPI support is an optional private adapter rather than a base dependency;
-#1552 owns its final public composition API.
+FastAPI support is an optional public submodule rather than a base or package-
+root dependency; the root import remains framework-neutral.
