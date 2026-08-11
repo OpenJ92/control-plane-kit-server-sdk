@@ -191,23 +191,6 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
             ("fingerprint_sha256", SensitiveText("f" * 64)),
         ):
             with self.subTest(field_name=field_name):
-                mutated = _key(f"surface-{field_name}")
-                object.__setattr__(mutated, field_name, candidate)
-                with self.assertRaisesRegex(
-                    TypeError,
-                    "surface-read verifier public key fields must use exact core types",
-                ):
-                    key_set_type(
-                        DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
-                        (mutated,),
-                    )
-
-        for field_name, candidate in (
-            ("algorithm", object()),
-            ("public_key_pem", SensitiveText(_pem("sensitive"))),
-            ("fingerprint_sha256", SensitiveText("f" * 64)),
-        ):
-            with self.subTest(field_name=field_name):
                 mutated = _key("key-b")
                 object.__setattr__(mutated, field_name, candidate)
                 with self.assertRaisesRegex(
@@ -620,6 +603,23 @@ class SurfaceReadVerifierKeySetTests(unittest.TestCase):
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
         self.assertNotIn("nested-key-secret", str(raised.exception))
+
+        for field_name, candidate in (
+            ("algorithm", object()),
+            ("public_key_pem", SensitiveText(_pem("sensitive"))),
+            ("fingerprint_sha256", SensitiveText("f" * 64)),
+        ):
+            with self.subTest(field_name=field_name):
+                mutated = _key(f"surface-{field_name}")
+                object.__setattr__(mutated, field_name, candidate)
+                with self.assertRaisesRegex(
+                    TypeError,
+                    "surface-read verifier public key fields must use exact core types",
+                ):
+                    key_set_type(
+                        DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                        (mutated,),
+                    )
 
         duplicate_id = (
             _key("surface-duplicate", "first"),

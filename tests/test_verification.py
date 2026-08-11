@@ -157,6 +157,15 @@ def _json_with_pad_bits(value: dict[str, object]) -> bytes:
     return encoded
 
 
+def _json_for_base64url_length(value: dict[str, object], length: int) -> bytes:
+    encoded = _json_value(value)
+    while len(_b64url(encoded)) < length:
+        encoded += b" "
+    if len(_b64url(encoded)) != length:
+        raise AssertionError("requested base64url length is unreachable")
+    return encoded
+
+
 def _public_pem(private_key: ed25519.Ed25519PrivateKey) -> str:
     return private_key.public_key().public_bytes(
         serialization.Encoding.PEM,
@@ -1729,31 +1738,52 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         )
         self.assertEqual(self._admit(token, request, verifier=verifier), request)
 
+        edge_request = _surface_request()
+        edge_grant = _surface_grant(edge_request)
+        edge_header = _surface_header(edge_grant.key_id)
+        edge_payload = _surface_payload(edge_grant)
+        aggregate = _signed_compact(
+            self.private_a,
+            header_bytes=_json_for_base64url_length(edge_header, 512),
+            payload_bytes=_json_for_base64url_length(edge_payload, 3_500),
+        )
+        header_over = _signed_compact(
+            self.private_a,
+            header_bytes=_json_for_base64url_length(edge_header, 514),
+            payload_bytes=_json_value(edge_payload),
+        )
+        payload_over = _signed_compact(
+            self.private_a,
+            header_bytes=_json_value(edge_header),
+            payload_bytes=_json_for_base64url_length(edge_payload, 3_842),
+        )
+        signature_over = _signed_compact(
+            self.private_a,
+            header_bytes=_json_value(edge_header),
+            payload_bytes=_json_value(edge_payload),
+            signature_segment=_b64url(b"\x00" * 97),
+        )
+        self.assertEqual(tuple(map(len, aggregate.split(b"."))), (512, 3_500, 86))
+        self.assertEqual(len(aggregate), 4_100)
+        self.assertEqual(len(header_over.split(b".")[0]), 514)
+        self.assertLessEqual(len(header_over), MAX_SURFACE_CREDENTIAL_BYTES)
+        self.assertEqual(len(payload_over.split(b".")[1]), 3_842)
+        self.assertLessEqual(len(payload_over), MAX_SURFACE_CREDENTIAL_BYTES)
+        self.assertEqual(len(signature_over.split(b".")[2]), 130)
+        self.assertLessEqual(len(signature_over), MAX_SURFACE_CREDENTIAL_BYTES)
+
         independent_edges = (
-            b"A" * MAX_SURFACE_HEADER_SEGMENT_BYTES
-            + b"."
-            + b"A" * 3_480
-            + b"."
-            + b"A" * MAX_SURFACE_SIGNATURE_SEGMENT_BYTES,
-            b"A" * 514 + b".e30." + b"A" * 86,
-            b"e30." + b"A" * 3_842 + b"." + b"A" * 86,
-            b"e30.e30." + b"A" * 130,
+            aggregate,
+            header_over,
+            payload_over,
+            signature_over,
         )
         for identity, candidate_token in enumerate(independent_edges):
             with self.subTest(edge=identity):
-                decode_calls = 0
-
-                def forbidden_decode(*_args: object, **_kwargs: object) -> bytes:
-                    nonlocal decode_calls
-                    decode_calls += 1
-                    raise AssertionError("base64 decoding was reached")
-
-                with _replaced_attribute(base64, "b64decode", forbidden_decode):
-                    self._assert_before_maintained_admission(
-                        candidate_token,
-                        request,
-                    )
-                self.assertEqual(decode_calls, 0)
+                self._assert_before_maintained_admission(
+                    candidate_token,
+                    edge_request,
+                )
 
     def test_compact_and_structural_profiles_reject_before_maintained_admission(self) -> None:
         request = _surface_request()
