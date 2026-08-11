@@ -435,5 +435,177 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
                 self.assertNotIn(excluded, decision)
 
 
+class SurfaceReadVerifierKeySetTests(unittest.TestCase):
+    def _types(self) -> tuple[type, type]:
+        module = importlib.import_module(VERIFIER_KEYS_MODULE)
+        try:
+            return (
+                module.WorkloadNodeControlSurfaceReadVerifierKeySet,
+                module.AtomicWorkloadNodeControlSurfaceReadVerifierKeySet,
+            )
+        except AttributeError:
+            self.fail("surface-read verifier key types are not implemented")
+
+    def _key_set(self, *keys: DelegationPublicKey):
+        key_set_type, _ = self._types()
+        return key_set_type(
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+            keys,
+        )
+
+    def test_surface_key_set_is_exact_bounded_sorted_and_purpose_closed(self) -> None:
+        key_set_type, holder_type = self._types()
+        key_a = _key("shared-key-a")
+        key_b = _key("shared-key-b")
+        key_set = key_set_type(
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+            (key_b, key_a),
+        )
+        holder = holder_type(key_set)
+
+        self.assertTrue(key_set_type.__dataclass_params__.frozen)
+        self.assertEqual(
+            tuple(field.name for field in fields(key_set_type)),
+            ("purpose", "public_keys"),
+        )
+        self.assertEqual(key_set_type.__slots__, ("purpose", "public_keys"))
+        self.assertEqual(
+            tuple(key.key_id for key in key_set.public_keys),
+            ("shared-key-a", "shared-key-b"),
+        )
+        self.assertEqual(holder_type.__slots__, ("_lock", "_snapshot"))
+        self.assertFalse(hasattr(key_set, "__dict__"))
+        self.assertFalse(hasattr(holder, "__dict__"))
+
+        for purpose in (
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+            DelegationKeyPurpose.GATEWAY_PROBE,
+        ):
+            with self.subTest(purpose=purpose):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "surface-read verifier key set purpose must be "
+                    "workload-node-control-surface-read",
+                ):
+                    key_set_type(purpose, (key_a,))
+
+        for keys in ((), tuple(_key(f"key-{index}") for index in range(17))):
+            with self.subTest(size=len(keys)):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "surface-read verifier key set must contain one to sixteen keys",
+                ):
+                    key_set_type(
+                        DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+                        keys,
+                    )
+
+    def test_command_and_surface_key_sets_and_holders_never_substitute(self) -> None:
+        surface_key_set_type, surface_holder_type = self._types()
+        key = _key("shared-key")
+        surface = surface_key_set_type(
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+            (key,),
+        )
+        command = WorkloadNodeControlVerifierKeySet(
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+            (key,),
+        )
+        surface_holder = surface_holder_type(surface)
+        command_holder = AtomicWorkloadNodeControlVerifierKeySet(command)
+
+        with self.assertRaises(TypeError) as raised:
+            surface_holder_type(command)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        with self.assertRaises(TypeError):
+            surface_holder.replace(command)
+        with self.assertRaises(TypeError):
+            AtomicWorkloadNodeControlVerifierKeySet(surface)
+        with self.assertRaises(TypeError):
+            command_holder.replace(surface)
+        self.assertIs(surface_holder.snapshot(), surface)
+        self.assertIs(command_holder.snapshot(), command)
+
+    def test_surface_holder_rotation_is_atomic_and_repr_redacted(self) -> None:
+        _, holder_type = self._types()
+        key_a = _key("surface-key-a")
+        key_b = _key("surface-key-b")
+        snapshots = (
+            self._key_set(key_a),
+            self._key_set(key_a, key_b),
+            self._key_set(key_b),
+        )
+        holder = holder_type(snapshots[0])
+        barrier = Barrier(6)
+        observed: list[object] = []
+
+        def read_many() -> None:
+            barrier.wait()
+            for _ in range(2_000):
+                observed.append(holder.snapshot())
+
+        def publish(candidate: object) -> None:
+            barrier.wait()
+            self.assertIs(holder.replace(candidate), candidate)
+
+        threads = [Thread(target=read_many) for _ in range(3)]
+        threads.extend(
+            Thread(target=publish, args=(candidate,))
+            for candidate in snapshots[1:]
+        )
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(3)
+            self.assertFalse(thread.is_alive())
+
+        accepted = {id(snapshot) for snapshot in snapshots}
+        self.assertTrue(observed)
+        self.assertTrue({id(value) for value in observed}.issubset(accepted))
+        for rendered in (repr(snapshots[1]), repr(holder)):
+            for key in (key_a, key_b):
+                self.assertNotIn(key.key_id, rendered)
+                self.assertNotIn(key.fingerprint_sha256, rendered)
+                self.assertNotIn(key.public_key_pem, rendered)
+
+    def test_surface_key_types_are_root_exported_without_crypto_or_outer_imports(self) -> None:
+        key_set_type, holder_type = self._types()
+        sdk = importlib.import_module("control_plane_kit_server_sdk")
+
+        self.assertIs(
+            sdk.WorkloadNodeControlSurfaceReadVerifierKeySet,
+            key_set_type,
+        )
+        self.assertIs(
+            sdk.AtomicWorkloadNodeControlSurfaceReadVerifierKeySet,
+            holder_type,
+        )
+        self.assertIn("WorkloadNodeControlSurfaceReadVerifierKeySet", sdk.__all__)
+        self.assertIn(
+            "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
+            sdk.__all__,
+        )
+
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        decision = (
+            REPOSITORY_ROOT
+            / "docs"
+            / "decisions"
+            / "0012-signed-surface-read-admission.md"
+        )
+        self.assertTrue(decision.is_file())
+        combined = readme + decision.read_text(encoding="utf-8")
+        for required in (
+            "WorkloadNodeControlSurfaceReadVerifierKeySet",
+            "WORKLOAD_NODE_CONTROL_SURFACE_READ",
+            "process-local",
+            "public verification material",
+            "#1507",
+        ):
+            self.assertIn(required, combined)
+
+
 if __name__ == "__main__":
     unittest.main()

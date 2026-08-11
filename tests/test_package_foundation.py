@@ -16,7 +16,7 @@ PACKAGE_ROOT = SOURCE_ROOT / "control_plane_kit_server_sdk"
 CORE_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "3d85dc76300bf88be923531445ce83e9b6c7b23e.zip"
+    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip"
     "#subdirectory=control-plane-kit-core"
 )
 VERIFICATION_DEPENDENCIES = [
@@ -73,16 +73,20 @@ import control_plane_kit_server_sdk as sdk
 assert sdk.__version__ == "0.1.0"
 assert sdk.__all__ == [
     "AtomicControlPlaneVariable",
+    "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
+    "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
     "__version__",
 ]
 assert sdk.AtomicControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.atomic"
+assert sdk.AtomicWorkloadNodeControlSurfaceReadVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert sdk.AtomicWorkloadNodeControlVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert sdk.ControlPlaneInvocationContext.__module__ == "control_plane_kit_server_sdk.context"
 assert sdk.ControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.protocol"
+assert sdk.WorkloadNodeControlSurfaceReadVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert sdk.WorkloadNodeControlVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert "control_plane_kit_core" in sys.modules
 for name in (
@@ -149,7 +153,7 @@ for name in (
             "pip install .",
             "control_plane_kit_server_sdk",
             "__version__",
-            "3d85dc76300bf88be923531445ce83e9b6c7b23e",
+            "0ee72c3fcdfbee5094357152bdf070fbfc53393c",
             "not published",
         ):
             with self.subTest(required=required):

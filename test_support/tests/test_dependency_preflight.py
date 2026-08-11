@@ -12,7 +12,7 @@ import unittest
 ACCEPTED_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "3d85dc76300bf88be923531445ce83e9b6c7b23e.zip"
+    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip"
     "#subdirectory=control-plane-kit-core"
 )
 ACCEPTED_VERIFICATION_DEPENDENCIES = (
@@ -74,7 +74,7 @@ class DependencyPreflightTests(unittest.TestCase):
             (
                 "mutable-ref",
                 accepted.replace(
-                    "3d85dc76300bf88be923531445ce83e9b6c7b23e.zip",
+                    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip",
                     "main.zip",
                 ),
             ),
@@ -88,7 +88,7 @@ class DependencyPreflightTests(unittest.TestCase):
             (
                 "wrong-full-sha",
                 accepted.replace(
-                    "3d85dc76300bf88be923531445ce83e9b6c7b23e",
+                    "0ee72c3fcdfbee5094357152bdf070fbfc53393c",
                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 ),
             ),
@@ -188,7 +188,7 @@ class DependencyPreflightTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("dependency-preflight=accepted", completed.stdout)
-        self.assertIn("3d85dc76300bf88be923531445ce83e9b6c7b23e", completed.stdout)
+        self.assertIn("0ee72c3fcdfbee5094357152bdf070fbfc53393c", completed.stdout)
 
     def test_mutable_or_wrong_coordinates_are_rejected_by_structured_preflight(self) -> None:
         for identity, document in self._mutations():
