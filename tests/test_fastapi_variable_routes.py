@@ -6,6 +6,7 @@ import base64
 from dataclasses import replace
 import importlib
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import subprocess
@@ -40,6 +41,7 @@ from control_plane_kit_core import (
     NodeControlPayload,
     NodeControlReadStateSucceeded,
     NodeControlRejected,
+    NodeControlResultCodec,
     NodeControlTarget,
     NodeControlTransitionSucceeded,
     ScalarControlState,
@@ -66,6 +68,7 @@ MAX_BODY_BYTES = 16_384
 MAX_HEADER_BYTES = 32_768
 MAX_HEADER_COUNT = 64
 MAX_PATH_BYTES = 1_024
+MAX_QUERY_BYTES = 1_024
 
 ERRORS = {
     400: {"code": "node-control.request-invalid"},
@@ -407,6 +410,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
         *,
         headers: list[tuple[bytes, bytes]] | None = None,
         chunks: tuple[bytes, ...] = (b"",),
+        query_string: object = b"",
     ) -> tuple[int, dict[str, object] | None, bytes]:
         messages = [
             {
@@ -434,7 +438,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
             "scheme": "http",
             "path": path,
             "raw_path": path.encode("ascii"),
-            "query_string": b"",
+            "query_string": query_string,
             "headers": [] if headers is None else headers,
             "client": ("127.0.0.1", 1),
             "server": ("test", 80),
@@ -556,6 +560,18 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         )
         self.assertEqual(len(routes), 2)
         self.assertEqual(alpha.descriptor_calls, 1)
+
+        read_route = next(
+            route
+            for route in routes
+            if route.path == "/__control/variables/{variable_name}"
+        )
+        registry = inspect.getclosurevars(read_route.endpoint).nonlocals["registry"]
+        self.assertEqual(len(registry["alpha"]), 3)
+        registered_variable, registered_descriptor, registered_codec = registry["alpha"]
+        self.assertIs(registered_variable, alpha)
+        self.assertEqual(registered_descriptor, _descriptor("alpha"))
+        self.assertIsInstance(registered_codec, NodeControlResultCodec)
 
         alpha._descriptor = _descriptor("beta")
         fastapi = importlib.import_module("fastapi")
@@ -857,6 +873,53 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         self.assertEqual(variable.read_calls, 0)
         self.assertEqual(variable.apply_calls, 0)
 
+    def test_query_input_rejects_before_admission_registry_replay_or_variable(self) -> None:
+        for operation in NodeControlOperation:
+            for identity, query_string, expected_status in (
+                ("nonempty", b"ignored=true", 400),
+                ("oversized", b"x" * (MAX_QUERY_BYTES + 1), 413),
+            ):
+                with self.subTest(operation=operation, identity=identity):
+                    clock = ThreadRecordingClock()
+                    replay = _ProcessLocalNodeControlReplay()
+                    variable = RecordingVariable(_descriptor())
+                    app = self._app(
+                        variable,
+                        verifier=self._verifier(clock),
+                        replay=replay,
+                    )
+                    request = _request(
+                        operation,
+                        request_id=f"query-{operation.value}-{identity}",
+                        key=f"query-{operation.value}-{identity}",
+                    )
+                    path = "/__control/variables/routing"
+                    chunks = (b"",)
+                    if operation is NodeControlOperation.APPLY_COMMAND:
+                        path += "/commands"
+                        chunks = (_candidate(request),)
+                    response = self._call(
+                        app,
+                        "GET" if operation is NodeControlOperation.READ_STATE else "POST",
+                        path,
+                        headers=[self._authorization(request)],
+                        chunks=chunks,
+                        query_string=query_string,
+                    )
+
+                    self.assert_error(response, expected_status)
+                    self.assertEqual(clock.thread_ids, [])
+                    self.assertEqual(variable.read_calls, 0)
+                    self.assertEqual(variable.apply_calls, 0)
+                    self.assertEqual(replay._entries, {})
+
+        module = self._module()
+        self.assertTrue(
+            hasattr(module, "_query_status"),
+            "missing private raw query classifier",
+        )
+        self.assertEqual(module._query_status(object()), 400)
+
     def test_fragmented_apply_reconstructs_the_exact_candidate(self) -> None:
         variable = RecordingVariable(_descriptor())
         app = self._app(variable)
@@ -1136,6 +1199,27 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         self.assertTrue(
             {"to_thread", "run_in_executor", "run_sync", "iterate_in_threadpool"}
             .isdisjoint(called_names | called_attributes)
+        )
+
+    def test_source_constructs_result_codec_only_during_registry_snapshot(self) -> None:
+        module = self._module()
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=module.__file__)
+        codec_calls: list[tuple[str, int]] = []
+        for function in (
+            node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+        ):
+            for node in ast.walk(function):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "NodeControlResultCodec"
+                ):
+                    codec_calls.append((function.name, node.lineno))
+
+        self.assertEqual(
+            [name for name, _line in codec_calls],
+            ["_build_variable_routes"],
         )
 
     def test_verifier_through_variable_execution_runs_off_event_loop(self) -> None:

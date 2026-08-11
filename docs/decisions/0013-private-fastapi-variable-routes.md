@@ -23,7 +23,7 @@ POST /__control/variables/{variable_name}/commands
 The interpreter order is fixed:
 
 ```text
-bounded raw path, headers, and streamed body
+bounded raw path and query rejection, headers, and streamed body
   -> signed admission
     -> exact trusted target equality
       -> immutable registry lookup
@@ -44,8 +44,10 @@ module is intentionally absent from `__all__`.
 
 No credential, request candidate, target identity, provider exception, or
 variable result is rendered in an error. Transport and interpretation failures
-use a small closed status/code table. No route creates graph authority,
-durability, provider effects, or a transaction boundary.
+use a small closed status/code table. Authenticated APPLY deliberately invokes
+caller-owned mutation and may therefore change process-local or durable
+workload-owned state. The adapter adds no SDK-owned persistence, transaction,
+graph authority, or provider client.
 
 ## Alternatives Rejected
 

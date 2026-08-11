@@ -41,6 +41,10 @@ That extra contains the same verification pair plus `fastapi==0.141.1`. It
 supports the internal authenticated variable routes implemented by #1551. The
 SDK root remains lazy and framework-neutral; #1552 owns the one public installer
 that will compose variable routes with stateless capability and status reads.
+Authenticated APPLY invokes the caller-supplied variable and can mutate
+process-local or durable workload-owned state. The SDK adapter owns no storage,
+transaction, graph authority, or provider client; #1506 replay remains its
+accepted cancellation, retry, and convergence boundary.
 
 The root import exposes one neutral invocation value:
 

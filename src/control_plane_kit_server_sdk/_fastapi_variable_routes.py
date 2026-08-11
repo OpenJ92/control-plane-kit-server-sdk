@@ -37,6 +37,7 @@ _MAX_BODY_BYTES = 16_384
 _MAX_HEADER_BYTES = 32_768
 _MAX_HEADER_COUNT = 64
 _MAX_PATH_BYTES = 1_024
+_MAX_QUERY_BYTES = 1_024
 _READ_RESULTS = (NodeControlReadStateSucceeded, NodeControlRejected, NodeControlFailed)
 _APPLY_RESULTS = (NodeControlTransitionSucceeded, NodeControlRejected, NodeControlFailed)
 _ERROR_BODIES = {
@@ -65,6 +66,16 @@ def _response(status: int, body: bytes) -> Response:
 
 def _error(status: int) -> Response:
     return _response(status, _ERROR_BODIES[status])
+
+
+def _query_status(query_string: object) -> int | None:
+    if type(query_string) is not bytes:
+        return 400
+    if len(query_string) > _MAX_QUERY_BYTES:
+        return 413
+    if query_string:
+        return 400
+    return None
 
 
 def _credential(headers: object) -> bytes:
@@ -122,12 +133,11 @@ def _compact_result(
     *,
     request_id: str,
     operation: NodeControlOperation,
-    descriptor: ControlPlaneVariableDescriptor,
+    codec: NodeControlResultCodec,
 ) -> bytes:
     allowed = _READ_RESULTS if operation is NodeControlOperation.READ_STATE else _APPLY_RESULTS
     if type(result) not in allowed:
         raise ValueError
-    codec = NodeControlResultCodec(descriptor)
     normalized = codec.decode(codec.encode(result))
     if normalized.request_id != request_id or normalized.operation is not operation:
         raise ValueError
@@ -150,7 +160,10 @@ def _interpret(
     route_operation: NodeControlOperation,
     route_variable: NodeControlGraphReference,
     target: NodeControlTarget,
-    registry: dict[str, tuple[object, ControlPlaneVariableDescriptor]],
+    registry: dict[
+        str,
+        tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
+    ],
     verifier: Ed25519WorkloadNodeControlVerifier,
     replay: _ProcessLocalNodeControlReplay,
 ) -> tuple[int, bytes]:
@@ -172,9 +185,8 @@ def _interpret(
     registered = registry.get(route_variable.value)
     if registered is None:
         return 404, _ERROR_BODIES[404]
-    variable, descriptor = registered
+    variable, descriptor, codec = registered
     context = ControlPlaneInvocationContext(command)
-    codec = NodeControlResultCodec(descriptor)
     try:
         if route_operation is NodeControlOperation.READ_STATE:
             result = variable.read(context)
@@ -188,7 +200,7 @@ def _interpret(
             result,
             request_id=command.request_id,
             operation=route_operation,
-            descriptor=descriptor,
+            codec=codec,
         )
     except _NodeControlReplayConflict:
         return 409, _ERROR_BODIES[409]
@@ -205,7 +217,10 @@ async def _handle(
     operation: NodeControlOperation,
     *,
     target: NodeControlTarget,
-    registry: dict[str, tuple[object, ControlPlaneVariableDescriptor]],
+    registry: dict[
+        str,
+        tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
+    ],
     verifier: Ed25519WorkloadNodeControlVerifier,
     replay: _ProcessLocalNodeControlReplay,
 ) -> Response:
@@ -214,6 +229,9 @@ async def _handle(
         return _error(400)
     if len(raw_path) > _MAX_PATH_BYTES:
         return _error(413)
+    query_status = _query_status(request.scope.get("query_string"))
+    if query_status is not None:
+        return _error(query_status)
     try:
         credential = _credential(request.scope.get("headers"))
         candidate_bytes = await _body(request)
@@ -270,7 +288,10 @@ def _build_variable_routes(
         descriptor.variable_name.value: descriptor
         for descriptor in declaration.surface.variables
     }
-    registry: dict[str, tuple[object, ControlPlaneVariableDescriptor]] = {}
+    registry: dict[
+        str,
+        tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
+    ] = {}
     try:
         for variable in variables:
             descriptor = variable.descriptor()
@@ -282,7 +303,11 @@ def _build_variable_routes(
                 or descriptor.variable_name.value in registry
             ):
                 raise ValueError
-            registry[descriptor.variable_name.value] = (variable, descriptor)
+            registry[descriptor.variable_name.value] = (
+                variable,
+                descriptor,
+                NodeControlResultCodec(descriptor),
+            )
     except Exception:
         raise ValueError("FastAPI variable route registry is invalid") from None
 
