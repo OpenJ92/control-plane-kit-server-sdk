@@ -131,12 +131,13 @@ def _prepare_installation(
 
 
 def install_cpk_control_routes(
-    app,
-    target,
-    declaration,
-    variables,
-    command_verifier,
-    surface_read_verifier,
+    app: fastapi.FastAPI,
+    *,
+    target: NodeControlTarget,
+    declaration: WorkloadNodeControlSurfaceDeclaration,
+    variables: tuple[object, ...],
+    command_verifier: Ed25519WorkloadNodeControlVerifier,
+    surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,
 ) -> None:
     """Install the exact CPK route family with one host-app mutation."""
 

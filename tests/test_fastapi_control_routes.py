@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from threading import Event, Lock, get_ident
 import tomllib
+from typing import get_type_hints
 import unittest
 
 import rfc8785
@@ -610,8 +611,9 @@ class FastApiControlRouteTests(unittest.TestCase):
         module = self._module()
         self.assertEqual(module.__all__, ["install_cpk_control_routes"])
         function = module.install_cpk_control_routes
+        signature = inspect.signature(function)
         self.assertEqual(
-            tuple(inspect.signature(function).parameters),
+            tuple(signature.parameters),
             (
                 "app",
                 "target",
@@ -620,6 +622,31 @@ class FastApiControlRouteTests(unittest.TestCase):
                 "command_verifier",
                 "surface_read_verifier",
             ),
+        )
+        self.assertEqual(
+            tuple(parameter.kind for parameter in signature.parameters.values()),
+            (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.KEYWORD_ONLY,
+            ),
+        )
+        self.assertEqual(
+            get_type_hints(function),
+            {
+                "app": importlib.import_module("fastapi").FastAPI,
+                "target": NodeControlTarget,
+                "declaration": WorkloadNodeControlSurfaceDeclaration,
+                "variables": tuple[object, ...],
+                "command_verifier": Ed25519WorkloadNodeControlVerifier,
+                "surface_read_verifier": (
+                    Ed25519WorkloadNodeControlSurfaceReadVerifier
+                ),
+                "return": type(None),
+            },
         )
         root = importlib.import_module("control_plane_kit_server_sdk")
         self.assertNotIn("install_cpk_control_routes", root.__all__)
