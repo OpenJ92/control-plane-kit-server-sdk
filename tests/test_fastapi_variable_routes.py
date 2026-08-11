@@ -295,6 +295,16 @@ class MutableDescriptorVariable(RecordingVariable):
         self._descriptor = descriptor
 
 
+class ThreadRecordingClock:
+    def __init__(self, now: int = NOW) -> None:
+        self.now = now
+        self.thread_ids: list[int] = []
+
+    def __call__(self) -> int:
+        self.thread_ids.append(get_ident())
+        return self.now
+
+
 class FastApiVariableRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -312,11 +322,20 @@ class FastApiVariableRouteTests(unittest.TestCase):
             DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
             (public_key,),
         )
+        cls.holder = AtomicWorkloadNodeControlVerifierKeySet(snapshot)
         cls.verifier = Ed25519WorkloadNodeControlVerifier(
-            AtomicWorkloadNodeControlVerifierKeySet(snapshot),
+            cls.holder,
             expected_issuer=ISSUER,
             expected_audience=AUDIENCE,
             clock=lambda: NOW,
+        )
+
+    def _verifier(self, clock) -> Ed25519WorkloadNodeControlVerifier:
+        return Ed25519WorkloadNodeControlVerifier(
+            self.holder,
+            expected_issuer=ISSUER,
+            expected_audience=AUDIENCE,
+            clock=clock,
         )
 
     def _module(self):
@@ -641,6 +660,11 @@ class FastApiVariableRouteTests(unittest.TestCase):
             (b"x-padding", b"x" * MAX_HEADER_BYTES),
         ]
         self.assert_error(self._read(app, read, headers=huge_headers), 413)
+        too_many_headers = [self._authorization(read)] + [
+            (f"x-{index}".encode("ascii"), b"x")
+            for index in range(64)
+        ]
+        self.assert_error(self._read(app, read, headers=too_many_headers), 413)
 
         apply = _request(NodeControlOperation.APPLY_COMMAND)
         self.assert_error(
@@ -655,7 +679,8 @@ class FastApiVariableRouteTests(unittest.TestCase):
         app = self._app(variable)
         request = _request(NodeControlOperation.APPLY_COMMAND)
         self.assert_error(self._apply(app, request, chunks=(b"not-json",)), 401)
-        self.assertEqual(variable.apply_calls, 0)
+        self.assertEqual(self._apply(app, request)[0], 200)
+        self.assertEqual(variable.apply_calls, 1)
 
     def test_same_audience_nonlocal_targets_reject_before_registry(self) -> None:
         variable = RecordingVariable(_descriptor())
@@ -692,6 +717,19 @@ class FastApiVariableRouteTests(unittest.TestCase):
                 request = _request(NodeControlOperation.READ_STATE, target=target)
                 self.assert_error(self._read(app, request), 403)
         self.assertEqual(variable.read_calls, 0)
+
+        wrong_apply = _request(
+            NodeControlOperation.APPLY_COMMAND,
+            target=substitutions[0],
+            key="nonlocal-key",
+        )
+        self.assert_error(self._apply(app, wrong_apply), 403)
+        local_apply = _request(
+            NodeControlOperation.APPLY_COMMAND,
+            key="nonlocal-key",
+        )
+        self.assertEqual(self._apply(app, local_apply)[0], 200)
+        self.assertEqual(variable.apply_calls, 1)
 
     def test_route_operation_and_variable_binding_precede_lookup(self) -> None:
         variable = RecordingVariable(_descriptor())
@@ -794,8 +832,9 @@ class FastApiVariableRouteTests(unittest.TestCase):
         self.assertEqual(variable.apply_calls, 1)
 
     def test_verifier_through_variable_execution_runs_off_event_loop(self) -> None:
+        clock = ThreadRecordingClock()
         variable = RecordingVariable(_descriptor())
-        app = self._app(variable)
+        app = self._app(variable, verifier=self._verifier(clock))
 
         async def scenario():
             event_loop_thread = get_ident()
@@ -810,7 +849,9 @@ class FastApiVariableRouteTests(unittest.TestCase):
         event_loop_thread, response = asyncio.run(scenario())
         self.assertEqual(response[0], 200)
         self.assertEqual(len(variable.thread_ids), 1)
+        self.assertEqual(len(clock.thread_ids), 1)
         self.assertNotEqual(variable.thread_ids[0], event_loop_thread)
+        self.assertEqual(clock.thread_ids[0], variable.thread_ids[0])
 
     def test_ordinary_application_route_is_unchanged(self) -> None:
         variable = RecordingVariable(_descriptor())
