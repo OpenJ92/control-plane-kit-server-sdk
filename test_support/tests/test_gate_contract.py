@@ -411,6 +411,8 @@ with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
             )
             (root / "control_plane_kit_server_sdk" / "verification.py").write_text(
                 "import jwt\n"
+                "class Ed25519WorkloadNodeControlSurfaceReadVerifier:\n"
+                "    pass\n"
                 "class Ed25519WorkloadNodeControlVerifier:\n"
                 "    pass\n",
                 encoding="utf-8",
