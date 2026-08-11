@@ -574,13 +574,15 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
         )
         self.assertNotEqual(b".".join((header, payload, mutated_signature)), token)
 
-    def test_public_module_exports_only_one_verifier_and_one_error(self) -> None:
+    def test_public_module_exports_only_verifiers_and_errors(self) -> None:
         module = self._module()
 
         self.assertEqual(
             module.__all__,
             [
+                "Ed25519WorkloadNodeControlSurfaceReadVerifier",
                 "Ed25519WorkloadNodeControlVerifier",
+                "WorkloadNodeControlSurfaceReadVerificationError",
                 "WorkloadNodeControlVerificationError",
             ],
         )
