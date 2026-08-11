@@ -928,20 +928,34 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         self.assertEqual(self._apply(app, local_apply)[0], 200)
         self.assertEqual(variable.apply_calls, 1)
 
-        nonlocal_missing = _request(
-            NodeControlOperation.READ_STATE,
-            target=substitutions[0],
-            variable="missing",
-        )
-        self.assert_error(
-            self._read(app, nonlocal_missing, variable="missing"),
-            403,
-        )
-        local_missing = _request(
-            NodeControlOperation.READ_STATE,
-            variable="missing",
-        )
-        self.assert_error(self._read(app, local_missing, variable="missing"), 404)
+        for operation in NodeControlOperation:
+            with self.subTest(operation=operation, precedence="missing"):
+                nonlocal_missing = _request(
+                    operation,
+                    target=substitutions[0],
+                    variable="missing",
+                    request_id=f"nonlocal-missing-{operation.value}",
+                    key=f"nonlocal-missing-{operation.value}",
+                )
+                nonlocal_response = (
+                    self._read(app, nonlocal_missing, variable="missing")
+                    if operation is NodeControlOperation.READ_STATE
+                    else self._apply(app, nonlocal_missing, variable="missing")
+                )
+                self.assert_error(nonlocal_response, 403)
+
+                local_missing = _request(
+                    operation,
+                    variable="missing",
+                    request_id=f"local-missing-{operation.value}",
+                    key=f"local-missing-{operation.value}",
+                )
+                local_response = (
+                    self._read(app, local_missing, variable="missing")
+                    if operation is NodeControlOperation.READ_STATE
+                    else self._apply(app, local_missing, variable="missing")
+                )
+                self.assert_error(local_response, 404)
 
     def test_route_operation_and_variable_binding_precede_lookup(self) -> None:
         variable = RecordingVariable(_descriptor())
@@ -1014,7 +1028,12 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
             apply_gate=(entered, release),
         )
         clock = ThreadRecordingClock()
-        app = self._app(variable, verifier=self._verifier(clock))
+        replay = _ProcessLocalNodeControlReplay()
+        app = self._app(
+            variable,
+            verifier=self._verifier(clock),
+            replay=replay,
+        )
         request = _request(NodeControlOperation.APPLY_COMMAND)
 
         async def scenario():
@@ -1038,6 +1057,16 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
                 )
             )
             self.assertTrue(await asyncio.to_thread(clock.second_call.wait, 3))
+
+            deadline = asyncio.get_running_loop().time() + 3
+            while True:
+                with replay._condition:
+                    waiter_count = len(replay._condition._waiters)
+                if waiter_count == 1:
+                    break
+                self.assertLess(asyncio.get_running_loop().time(), deadline)
+                await asyncio.sleep(0)
+
             loop_progressed = False
 
             async def mark_loop_progress() -> None:
