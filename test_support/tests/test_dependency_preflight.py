@@ -147,7 +147,10 @@ class DependencyPreflightTests(unittest.TestCase):
             (
                 "missing-fastapi",
                 self._document(
-                    fastapi_dependencies=ACCEPTED_VERIFICATION_DEPENDENCIES,
+                    fastapi_dependencies=(
+                        *ACCEPTED_VERIFICATION_DEPENDENCIES,
+                        "starlette==1.6.0",
+                    ),
                 ),
             ),
             (
@@ -156,6 +159,26 @@ class DependencyPreflightTests(unittest.TestCase):
                     fastapi_dependencies=(
                         *ACCEPTED_VERIFICATION_DEPENDENCIES,
                         "fastapi==0.140.0",
+                        "starlette==1.6.0",
+                    ),
+                ),
+            ),
+            (
+                "missing-starlette",
+                self._document(
+                    fastapi_dependencies=(
+                        *ACCEPTED_VERIFICATION_DEPENDENCIES,
+                        "fastapi==0.141.1",
+                    ),
+                ),
+            ),
+            (
+                "wrong-starlette-version",
+                self._document(
+                    fastapi_dependencies=(
+                        *ACCEPTED_VERIFICATION_DEPENDENCIES,
+                        "fastapi==0.141.1",
+                        "starlette==1.5.0",
                     ),
                 ),
             ),

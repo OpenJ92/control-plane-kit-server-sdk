@@ -12,6 +12,7 @@ from threading import Event, Lock, get_ident
 import tomllib
 import unittest
 
+import rfc8785
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -23,21 +24,29 @@ from control_plane_kit_core import (
     ControlPlaneVariableDescriptor,
     ControlPlaneVariableKind,
     ControlPlaneVariableOperationContract,
+    DelegatedWorkloadNodeControlGrant,
     DelegatedWorkloadNodeControlSurfaceReadGrant,
     DelegatedWorkloadNodeControlSurfaceReadGrantProfile,
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
     DelegationPublicKey,
     NodeControlCanonicalization,
+    NodeControlCommandRequest,
+    NodeControlEvidence,
+    NodeControlEvidenceCode,
     NodeControlGraphReference,
     NodeControlGraphReferenceRole,
     NodeControlOperation,
     NodeControlPayload,
     NodeControlReadStateSucceeded,
     NodeControlSurfaceReadKind,
+    NodeControlSurfaceReadContractError,
     NodeControlSurfaceReadRequest,
     NodeControlSurfaceReadResultCodec,
     NodeControlTarget,
+    NodeControlTransitionSucceeded,
+    MAX_NODE_CONTROL_SURFACE_CAPABILITIES_RESULT_BYTES,
+    MAX_NODE_CONTROL_SURFACE_STATUS_RESULT_BYTES,
     ScalarControlState,
     WorkloadNodeControlSurfaceDeclaration,
     WorkloadNodeControlSurfaceDescriptor,
@@ -92,11 +101,26 @@ def _target(**changes: object) -> NodeControlTarget:
     return NodeControlTarget(**values)
 
 
-def _descriptor(name: str) -> ControlPlaneVariableDescriptor:
+def _descriptor(
+    name: str,
+    *,
+    kind: ControlPlaneVariableKind = ControlPlaneVariableKind.SCALAR,
+    description: str | None = None,
+) -> ControlPlaneVariableDescriptor:
+    state_codecs = {
+        ControlPlaneVariableKind.SCALAR: ControlPlaneStateCodec.SCALAR_V1,
+        ControlPlaneVariableKind.MAP: ControlPlaneStateCodec.MAP_V1,
+        ControlPlaneVariableKind.WEIGHTED_ROUTING: ControlPlaneStateCodec.WEIGHTED_ROUTING_V1,
+    }
+    command_codecs = {
+        ControlPlaneVariableKind.SCALAR: ControlPlaneCommandCodec.REPLACE_SCALAR_V1,
+        ControlPlaneVariableKind.MAP: ControlPlaneCommandCodec.REPLACE_MAP_V1,
+        ControlPlaneVariableKind.WEIGHTED_ROUTING: ControlPlaneCommandCodec.REPLACE_WEIGHTED_ROUTING_V1,
+    }
     return ControlPlaneVariableDescriptor(
         variable_name=_reference(NodeControlGraphReferenceRole.VARIABLE, name),
-        kind=ControlPlaneVariableKind.SCALAR,
-        state_codec=ControlPlaneStateCodec.SCALAR_V1,
+        kind=kind,
+        state_codec=state_codecs[kind],
         operation_contracts=(
             ControlPlaneVariableOperationContract(
                 NodeControlOperation.READ_STATE,
@@ -105,22 +129,57 @@ def _descriptor(name: str) -> ControlPlaneVariableDescriptor:
             ),
             ControlPlaneVariableOperationContract(
                 NodeControlOperation.APPLY_COMMAND,
-                ControlPlaneCommandCodec.REPLACE_SCALAR_V1,
+                command_codecs[kind],
                 ControlPlaneResultCodec.TRANSITION_V1,
             ),
         ),
+        description=description,
     )
 
 
 def _declaration(*names: str) -> WorkloadNodeControlSurfaceDeclaration:
+    return _declaration_from(tuple(_descriptor(name) for name in names))
+
+
+def _declaration_from(
+    descriptors: tuple[ControlPlaneVariableDescriptor, ...],
+    *,
+    socket: str = "control",
+) -> WorkloadNodeControlSurfaceDeclaration:
     return WorkloadNodeControlSurfaceDeclaration(
         WorkloadNodeControlSurfaceDescriptor(
             provider_socket_name=_reference(
                 NodeControlGraphReferenceRole.PROVIDER_SOCKET,
-                "control",
+                socket,
             ),
-            variables=tuple(_descriptor(name) for name in names),
+            variables=descriptors,
         )
+    )
+
+
+def _maximum_capability_declaration() -> WorkloadNodeControlSurfaceDeclaration:
+    description_lengths = [512] * 17 + [430, 1]
+    return _declaration_from(
+        tuple(
+            _descriptor(
+                f"variable-{index:03d}",
+                description="x" * length,
+            )
+            for index, length in enumerate(description_lengths)
+        )
+    )
+
+
+def _maximum_status_declaration() -> WorkloadNodeControlSurfaceDeclaration:
+    return _declaration_from(
+        tuple(
+            _descriptor(
+                f"v{index:03d}" + "x" * 124,
+                kind=ControlPlaneVariableKind.MAP,
+            )
+            for index in range(33)
+        ),
+        socket="c",
     )
 
 
@@ -199,6 +258,76 @@ def _surface_token(
     return signing_input + b"." + _b64url(private_key.sign(signing_input))
 
 
+def _command_request(
+    operation: NodeControlOperation,
+    *,
+    target: NodeControlTarget | None = None,
+    variable: str = "routing",
+    request_id: str = "command-request-1",
+    idempotency_key: str = "command-key-1",
+) -> NodeControlCommandRequest:
+    values: dict[str, object] = {
+        "target": _target() if target is None else target,
+        "variable_name": _reference(
+            NodeControlGraphReferenceRole.VARIABLE,
+            variable,
+        ),
+        "operation": operation,
+        "request_id": request_id,
+        "idempotency_key": idempotency_key,
+    }
+    if operation is NodeControlOperation.APPLY_COMMAND:
+        values.update(
+            command_codec=ControlPlaneCommandCodec.REPLACE_SCALAR_V1,
+            precondition=ControlPlaneTransitionPrecondition(1),
+            payload=NodeControlPayload(
+                ControlPlaneCommandCodec.REPLACE_SCALAR_V1,
+                ScalarControlState("blue"),
+            ),
+        )
+    return NodeControlCommandRequest(**values)
+
+
+def _command_token(
+    private_key: ed25519.Ed25519PrivateKey,
+    request: NodeControlCommandRequest,
+) -> bytes:
+    grant = DelegatedWorkloadNodeControlGrant(
+        issuer=ISSUER,
+        key_id="workload-key-a",
+        audience=AUDIENCE,
+        target=request.target,
+        variable_name=request.variable_name,
+        operation=request.operation,
+        command_codec=request.command_codec,
+        request_id=request.request_id,
+        idempotency_key=request.idempotency_key,
+        request_digest=request.canonical_digest(),
+        issued_at=100,
+        not_before=100,
+        expires_at=200,
+        jti="command-grant-1",
+    )
+    header = {
+        "alg": "EdDSA",
+        "kid": grant.key_id,
+        "typ": "CPK-WORKLOAD-NODE-CONTROL+JWT",
+    }
+    payload = {
+        "iss": grant.issuer,
+        "aud": grant.audience,
+        "iat": grant.issued_at,
+        "nbf": grant.not_before,
+        "exp": grant.expires_at,
+        "jti": grant.jti,
+        "workload_node_control": grant.descriptor(),
+    }
+    signing_input = _b64url(_json_bytes(header)) + b"." + _b64url(
+        _json_bytes(payload)
+    )
+    return signing_input + b"." + _b64url(private_key.sign(signing_input))
+
+
 def _public_pem(private_key: ed25519.Ed25519PrivateKey) -> str:
     return private_key.public_key().public_bytes(
         serialization.Encoding.PEM,
@@ -207,8 +336,15 @@ def _public_pem(private_key: ed25519.Ed25519PrivateKey) -> str:
 
 
 class RecordingVariable:
-    def __init__(self, name: str) -> None:
-        self._descriptor = _descriptor(name)
+    def __init__(
+        self,
+        name: str | None = None,
+        *,
+        descriptor: ControlPlaneVariableDescriptor | None = None,
+        apply_gate: tuple[Event, Event] | None = None,
+    ) -> None:
+        self._descriptor = _descriptor(name or "routing") if descriptor is None else descriptor
+        self.apply_gate = apply_gate
         self.descriptor_calls = 0
         self.read_calls = 0
         self.apply_calls = 0
@@ -228,7 +364,26 @@ class RecordingVariable:
 
     def apply(self, command: object, context: ControlPlaneInvocationContext) -> object:
         self.apply_calls += 1
-        raise AssertionError("discovery must not apply a variable")
+        if self.apply_gate is not None:
+            entered, release = self.apply_gate
+            entered.set()
+            release.wait(3)
+        return NodeControlTransitionSucceeded(
+            context.request.request_id,
+            2,
+            NodeControlEvidence(NodeControlEvidenceCode.APPLIED),
+        )
+
+
+class SensitiveDescriptorVariable:
+    def descriptor(self) -> object:
+        raise RuntimeError("authorization: Bearer descriptor-secret")
+
+    def read(self, _context: object) -> object:
+        raise AssertionError
+
+    def apply(self, _command: object, _context: object) -> object:
+        raise AssertionError
 
 
 class RecordingClock:
@@ -420,6 +575,33 @@ class FastApiControlRouteTests(unittest.TestCase):
         )
         return request, status, body
 
+    async def _command_call(
+        self,
+        app,
+        request: NodeControlCommandRequest,
+    ) -> tuple[int, bytes]:
+        if request.operation is NodeControlOperation.READ_STATE:
+            method = "GET"
+            path = f"/__control/variables/{request.variable_name.value}"
+            chunks = (b"",)
+        else:
+            method = "POST"
+            path = (
+                f"/__control/variables/{request.variable_name.value}/commands"
+            )
+            chunks = (_json_bytes(request.descriptor()),)
+        return await self._asgi_request(
+            app,
+            method,
+            path,
+            headers=[
+                self._authorization(
+                    _command_token(self.command_private, request)
+                )
+            ],
+            chunks=chunks,
+        )
+
     def test_public_optional_module_signature_and_exact_dependency_truth(self) -> None:
         module = self._module()
         self.assertEqual(module.__all__, ["install_cpk_control_routes"])
@@ -458,6 +640,13 @@ class FastApiControlRouteTests(unittest.TestCase):
         prior_identities = tuple(map(id, prior_routes))
         cached_schema = app.openapi()
         ordinary_schema = json.loads(json.dumps(cached_schema["paths"]["/ordinary"]))
+        app_state = dict(vars(app))
+        router_state = {
+            key: value
+            for key, value in vars(app.router).items()
+            if key != "routes"
+        }
+        starlette_state = dict(app.state._state)
         variable = RecordingVariable("routing")
 
         self._install(app, declaration=_declaration("routing"), variables=(variable,))
@@ -483,6 +672,18 @@ class FastApiControlRouteTests(unittest.TestCase):
             all(not path.startswith("/__control") for path in app.openapi()["paths"])
         )
         self.assertEqual(variable.descriptor_calls, 1)
+        self.assertEqual(set(vars(app)), set(app_state))
+        self.assertTrue(
+            all(vars(app)[key] is value for key, value in app_state.items())
+        )
+        self.assertEqual(set(vars(app.router)) - {"routes"}, set(router_state))
+        self.assertTrue(
+            all(
+                vars(app.router)[key] is value
+                for key, value in router_state.items()
+            )
+        )
+        self.assertEqual(app.state._state, starlette_state)
 
     def test_fresh_openapi_never_exposes_control_routes(self) -> None:
         app = self._app()
@@ -497,6 +698,95 @@ class FastApiControlRouteTests(unittest.TestCase):
         self.assertTrue(
             all(not path.startswith("/__control") for path in schema["paths"])
         )
+
+    def test_public_installer_executes_read_apply_and_one_replay_waiter(self) -> None:
+        declaration = _declaration("routing")
+        entered = Event()
+        release = Event()
+        variable = RecordingVariable(
+            "routing",
+            apply_gate=(entered, release),
+        )
+        app = self._app()
+        self._install(app, declaration=declaration, variables=(variable,))
+
+        read = _command_request(NodeControlOperation.READ_STATE)
+        read_status, read_body = asyncio.run(self._command_call(app, read))
+        self.assertEqual(read_status, 200)
+        self.assertEqual(
+            json.loads(read_body),
+            NodeControlResultCodec(_descriptor("routing")).encode(
+                NodeControlReadStateSucceeded(
+                    read.request_id,
+                    ControlPlaneStateCodec.SCALAR_V1,
+                    1,
+                    ScalarControlState("green"),
+                )
+            ),
+        )
+
+        apply = _command_request(NodeControlOperation.APPLY_COMMAND)
+
+        async def concurrent_apply() -> tuple[tuple[int, bytes], tuple[int, bytes]]:
+            owner = asyncio.create_task(self._command_call(app, apply))
+            entered_ok = await asyncio.to_thread(entered.wait, 2)
+            self.assertTrue(entered_ok)
+            waiter = asyncio.create_task(self._command_call(app, apply))
+            heartbeat = asyncio.Event()
+            asyncio.get_running_loop().call_soon(heartbeat.set)
+            await asyncio.wait_for(heartbeat.wait(), 1)
+            release.set()
+            return await asyncio.gather(owner, waiter)
+
+        owner_result, waiter_result = asyncio.run(concurrent_apply())
+        self.assertEqual(owner_result, waiter_result)
+        self.assertEqual(owner_result[0], 200)
+        self.assertEqual(
+            json.loads(owner_result[1]),
+            NodeControlResultCodec(_descriptor("routing")).encode(
+                NodeControlTransitionSucceeded(
+                    apply.request_id,
+                    2,
+                    NodeControlEvidence(NodeControlEvidenceCode.APPLIED),
+                )
+            ),
+        )
+        self.assertEqual((variable.read_calls, variable.apply_calls), (1, 1))
+
+        foreign = _command_request(
+            NodeControlOperation.READ_STATE,
+            target=replace(
+                _target(),
+                node_id=_reference(NodeControlGraphReferenceRole.NODE, "other"),
+            ),
+            variable="missing",
+            request_id="foreign-command",
+        )
+        foreign_status, foreign_body = asyncio.run(
+            self._command_call(app, foreign)
+        )
+        self.assertEqual(foreign_status, 403)
+        self.assertEqual(
+            json.loads(foreign_body),
+            {"code": "node-control.target-rejected"},
+        )
+
+    def test_two_apps_do_not_share_command_registry_or_replay(self) -> None:
+        declaration = _declaration("routing")
+        first = self._app()
+        second = self._app()
+        first_variable = RecordingVariable("routing")
+        second_variable = RecordingVariable("routing")
+        self._install(first, declaration=declaration, variables=(first_variable,))
+        self._install(second, declaration=declaration, variables=(second_variable,))
+        request = _command_request(NodeControlOperation.APPLY_COMMAND)
+
+        first_result = asyncio.run(self._command_call(first, request))
+        second_result = asyncio.run(self._command_call(second, request))
+
+        self.assertEqual(first_result, second_result)
+        self.assertEqual(first_result[0], 200)
+        self.assertEqual((first_variable.apply_calls, second_variable.apply_calls), (1, 1))
 
     def test_capabilities_and_status_are_exact_stateless_core_results(self) -> None:
         declaration = _declaration("alpha", "beta")
@@ -595,6 +885,84 @@ class FastApiControlRouteTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(json.loads(body)["registry_coverage"], expected)
 
+    def test_maximal_surface_results_publish_and_pinned_core_rejects_plus_one(self) -> None:
+        capability_declaration = _maximum_capability_declaration()
+        capability_app = self._app()
+        self._install(
+            capability_app,
+            declaration=capability_declaration,
+            variables=(),
+        )
+        capability_request, status, capability_body = self._surface_call(
+            capability_app,
+            capability_declaration,
+            NodeControlSurfaceReadKind.CAPABILITIES,
+            request_id="r" * 128,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            len(capability_body),
+            MAX_NODE_CONTROL_SURFACE_CAPABILITIES_RESULT_BYTES,
+        )
+
+        status_declaration = _maximum_status_declaration()
+        status_target = replace(
+            _target(),
+            provider_socket_name=_reference(
+                NodeControlGraphReferenceRole.PROVIDER_SOCKET,
+                "c",
+            ),
+        )
+        status_variables = tuple(
+            RecordingVariable(descriptor=descriptor)
+            for descriptor in status_declaration.surface.variables
+        )
+        status_app = self._app()
+        self._install(
+            status_app,
+            target=status_target,
+            declaration=status_declaration,
+            variables=status_variables,
+        )
+        status_request, status, status_body = self._surface_call(
+            status_app,
+            status_declaration,
+            NodeControlSurfaceReadKind.STATUS,
+            target=status_target,
+            request_id="r" * 128,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            len(status_body),
+            MAX_NODE_CONTROL_SURFACE_STATUS_RESULT_BYTES,
+        )
+
+        for request, declaration, body, maximum in (
+            (
+                capability_request,
+                capability_declaration,
+                capability_body,
+                MAX_NODE_CONTROL_SURFACE_CAPABILITIES_RESULT_BYTES,
+            ),
+            (
+                status_request,
+                status_declaration,
+                status_body,
+                MAX_NODE_CONTROL_SURFACE_STATUS_RESULT_BYTES,
+            ),
+        ):
+            codec = NodeControlSurfaceReadResultCodec(request, declaration)
+            candidate = {**json.loads(body), "unknown": ""}
+            padding = maximum + 1 - len(rfc8785.dumps(candidate))
+            self.assertGreaterEqual(padding, 0)
+            candidate["unknown"] = "x" * padding
+            self.assertEqual(len(rfc8785.dumps(candidate)), maximum + 1)
+            with self.assertRaisesRegex(
+                NodeControlSurfaceReadContractError,
+                "aggregate exceeds.*bound",
+            ):
+                codec.decode(candidate)
+
     def test_surface_transport_rejects_before_admission_or_discovery(self) -> None:
         declaration = _declaration("routing")
         variable = RecordingVariable("routing")
@@ -664,6 +1032,37 @@ class FastApiControlRouteTests(unittest.TestCase):
                 )
                 self.assertEqual(variable.descriptor_calls, 1)
                 self.assertEqual((variable.read_calls, variable.apply_calls), (0, 0))
+
+        variable = RecordingVariable("routing")
+        app = self._app()
+        self._install(app, declaration=declaration, variables=(variable,))
+        alternate = _declaration("other")
+        substituted_request = replace(
+            _surface_request(
+                declaration,
+                NodeControlSurfaceReadKind.STATUS,
+                request_id="alternate-declaration",
+            ),
+            declaration_identity=alternate.identity(),
+        )
+        status, body = asyncio.run(
+            self._asgi_request(
+                app,
+                "GET",
+                "/__control/status",
+                headers=[
+                    self._authorization(
+                        _surface_token(self.surface_private, substituted_request)
+                    )
+                ],
+            )
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(
+            json.loads(body),
+            {"code": "node-control.target-rejected"},
+        )
+        self.assertEqual((variable.read_calls, variable.apply_calls), (0, 0))
 
         variable = RecordingVariable("routing")
         app = self._app()
@@ -753,6 +1152,46 @@ class FastApiControlRouteTests(unittest.TestCase):
                     self.assertIs(app.router.routes, prior)
                     self.assertEqual(tuple(map(id, prior)), prior_ids)
 
+    def test_installation_failures_are_fixed_cause_free_and_state_preserving(self) -> None:
+        app = self._app()
+        cached_schema = app.openapi()
+        prior_routes = app.router.routes
+        prior_ids = tuple(map(id, prior_routes))
+        app_state = dict(vars(app))
+        router_state = dict(vars(app.router))
+        state_values = dict(app.state._state)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "FastAPI control route installation is invalid",
+        ) as raised:
+            self._install(
+                app,
+                declaration=_declaration("routing"),
+                variables=(SensitiveDescriptorVariable(),),
+            )
+
+        rendered = f"{raised.exception!s} {raised.exception!r}"
+        self.assertNotIn("authorization", rendered)
+        self.assertNotIn("descriptor-secret", rendered)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        self.assertIs(app.router.routes, prior_routes)
+        self.assertEqual(tuple(map(id, prior_routes)), prior_ids)
+        self.assertIs(app.openapi(), cached_schema)
+        self.assertEqual(set(vars(app)), set(app_state))
+        self.assertTrue(
+            all(vars(app)[key] is value for key, value in app_state.items())
+        )
+        self.assertEqual(set(vars(app.router)), set(router_state))
+        self.assertTrue(
+            all(
+                vars(app.router)[key] is value
+                for key, value in router_state.items()
+            )
+        )
+        self.assertEqual(app.state._state, state_values)
+
     def test_route_collision_classifier_is_closed_and_fail_closed(self) -> None:
         fastapi = importlib.import_module("fastapi")
         starlette_routing = importlib.import_module("starlette.routing")
@@ -773,16 +1212,38 @@ class FastApiControlRouteTests(unittest.TestCase):
             async def handle(self, _scope, _receive, _send):
                 return None
 
+        class RouteSubclass(starlette_routing.Route):
+            pass
+
         builders = (
             lambda app: app.add_api_route("/__control", endpoint, methods=["DELETE"]),
             lambda app: app.add_api_route("/__control/x", endpoint, methods=["PUT"]),
             lambda app: app.add_api_route("/{prefix}/x", endpoint, methods=["GET"]),
             lambda app: app.add_api_route("/{prefix:path}", endpoint, methods=["POST"]),
+            lambda app: app.add_api_route("/{value:int}/x", endpoint, methods=["GET"]),
+            lambda app: app.add_api_route("/{value}-embedded/x", endpoint, methods=["GET"]),
             lambda app: app.add_api_websocket_route("/__control/socket", endpoint),
+            lambda app: app.router.routes.append(
+                starlette_routing.Route(
+                    "/__control/starlette",
+                    endpoint,
+                    methods=["PATCH"],
+                )
+            ),
+            lambda app: app.router.routes.append(
+                starlette_routing.WebSocketRoute(
+                    "/__control/starlette-socket",
+                    endpoint,
+                )
+            ),
             lambda app: app.router.routes.append(starlette_routing.Mount("/", app=asgi_app)),
             lambda app: app.router.routes.append(starlette_routing.Mount("/__control", app=asgi_app)),
+            lambda app: app.router.routes.append(starlette_routing.Mount("/{tenant}", app=asgi_app)),
             lambda app: app.router.routes.append(starlette_routing.Host("example.test", app=asgi_app)),
             lambda app: app.router.routes.append(CustomRoute()),
+            lambda app: app.router.routes.append(
+                RouteSubclass("/ordinary-subclass", endpoint)
+            ),
         )
         for index, build in enumerate(builders):
             with self.subTest(index=index):
@@ -790,7 +1251,7 @@ class FastApiControlRouteTests(unittest.TestCase):
                 build(app)
                 prior = app.router.routes
                 prior_ids = tuple(map(id, prior))
-                with self.assertRaises(ValueError):
+                with self.assertRaisesRegex(ValueError, "collides"):
                     self._install(
                         app,
                         declaration=_declaration("routing"),
@@ -809,7 +1270,15 @@ class FastApiControlRouteTests(unittest.TestCase):
                     variables=(RecordingVariable("routing"),),
                 )
         app = fastapi.FastAPI()
-        app.router.routes.append(starlette_routing.Mount("/static", app=asgi_app))
+        nested = fastapi.FastAPI()
+        nested.add_api_route("/__control/nested", endpoint, methods=["GET"])
+        app.router.routes.append(starlette_routing.Mount("/static", app=nested))
+        app.router.routes.append(
+            starlette_routing.Route("/starlette", endpoint, methods=["GET"])
+        )
+        app.router.routes.append(
+            starlette_routing.WebSocketRoute("/starlette-socket", endpoint)
+        )
         self._install(
             app,
             declaration=_declaration("routing"),
@@ -836,7 +1305,10 @@ class FastApiControlRouteTests(unittest.TestCase):
                 ]
                 prior = app.router.routes
                 prior_ids = tuple(map(id, prior))
-                with self.assertRaises(ValueError):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "FastAPI control routes are already installed",
+                ):
                     self._install(
                         app,
                         declaration=_declaration("routing"),
@@ -874,8 +1346,36 @@ class FastApiControlRouteTests(unittest.TestCase):
             4,
         )
 
+        collided = self._app()
+        self._install(
+            collided,
+            declaration=_declaration("routing"),
+            variables=(RecordingVariable("routing"),),
+        )
+        collided.router.routes[:] = [
+            route
+            for route in collided.router.routes
+            if not getattr(route, "path", "").startswith("/__control")
+        ]
+
+        @collided.get("/__control/unmarked")
+        async def unmarked_collision() -> dict[str, str]:
+            return {"state": "unmarked"}
+
+        prior = collided.router.routes
+        prior_ids = tuple(map(id, prior))
+        with self.assertRaisesRegex(ValueError, "collides"):
+            self._install(
+                collided,
+                declaration=_declaration("routing"),
+                variables=(RecordingVariable("routing"),),
+            )
+        self.assertIs(collided.router.routes, prior)
+        self.assertEqual(tuple(map(id, prior)), prior_ids)
+
     def test_installer_rejects_after_first_asgi_execution(self) -> None:
         app = self._app()
+        cached_schema = app.openapi()
         status, body = asyncio.run(self._asgi_request(app, "GET", "/ordinary"))
         self.assertEqual((status, json.loads(body)), (200, {"message": "ordinary"}))
         self.assertIsNotNone(app.middleware_stack)
@@ -889,6 +1389,7 @@ class FastApiControlRouteTests(unittest.TestCase):
             )
         self.assertIs(app.router.routes, prior)
         self.assertEqual(tuple(map(id, prior)), prior_ids)
+        self.assertIs(app.openapi(), cached_schema)
 
     def test_two_apps_have_isolated_registry_target_and_routes(self) -> None:
         first = self._app()

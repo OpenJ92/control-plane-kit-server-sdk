@@ -261,6 +261,11 @@ class PackageGateContractTests(unittest.TestCase):
             "python /test-support/installed_fastapi_dependencies.py",
             gate,
         )
+        self.assertIn(
+            'python -m pip install "PyJWT==2.13.0" "cryptography==50.0.0" '
+            '"fastapi==0.141.1" "starlette==1.6.0"',
+            gate,
+        )
         for expected in (
             'version("PyJWT")',
             'version("cryptography")',
