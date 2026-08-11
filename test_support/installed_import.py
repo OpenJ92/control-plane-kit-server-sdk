@@ -10,9 +10,11 @@ if control_plane_kit_server_sdk.__version__ != "0.1.0":
     raise SystemExit("unexpected installed SDK version")
 if control_plane_kit_server_sdk.__all__ != [
     "AtomicControlPlaneVariable",
+    "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
+    "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
     "__version__",
 ]:
@@ -22,6 +24,11 @@ if (
     != "control_plane_kit_server_sdk.atomic"
 ):
     raise SystemExit("unexpected installed SDK atomic variable owner")
+if (
+    control_plane_kit_server_sdk.AtomicWorkloadNodeControlSurfaceReadVerifierKeySet.__module__
+    != "control_plane_kit_server_sdk.verifier_keys"
+):
+    raise SystemExit("unexpected installed SDK atomic surface-read key-set owner")
 if (
     control_plane_kit_server_sdk.AtomicWorkloadNodeControlVerifierKeySet.__module__
     != "control_plane_kit_server_sdk.verifier_keys"
@@ -37,6 +44,11 @@ if (
     != "control_plane_kit_server_sdk.protocol"
 ):
     raise SystemExit("unexpected installed SDK protocol owner")
+if (
+    control_plane_kit_server_sdk.WorkloadNodeControlSurfaceReadVerifierKeySet.__module__
+    != "control_plane_kit_server_sdk.verifier_keys"
+):
+    raise SystemExit("unexpected installed SDK surface-read key-set owner")
 if (
     control_plane_kit_server_sdk.WorkloadNodeControlVerifierKeySet.__module__
     != "control_plane_kit_server_sdk.verifier_keys"

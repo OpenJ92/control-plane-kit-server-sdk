@@ -33,6 +33,7 @@ def main() -> int:
 
     try:
         from control_plane_kit_server_sdk.verification import (
+            Ed25519WorkloadNodeControlSurfaceReadVerifier,
             Ed25519WorkloadNodeControlVerifier,
         )
         import jwt
@@ -41,6 +42,10 @@ def main() -> int:
         return _reject()
 
     if Ed25519WorkloadNodeControlVerifier.__module__ != (
+        "control_plane_kit_server_sdk.verification"
+    ):
+        return _reject()
+    if Ed25519WorkloadNodeControlSurfaceReadVerifier.__module__ != (
         "control_plane_kit_server_sdk.verification"
     ):
         return _reject()
