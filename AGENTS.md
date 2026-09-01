@@ -192,7 +192,8 @@ proof of authority.
 
 Never use broad Docker prune. Inspect resources before and after Docker work,
 remove only exact package-owned containers, networks, images, and volumes, and
-preserve unrelated resources and all Pottery Factory resources.
+preserve every unrelated or foreign container, network, volume, image, and
+mapping.
 
 ## Handoffs
 
