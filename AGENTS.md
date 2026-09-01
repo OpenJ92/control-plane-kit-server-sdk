@@ -1,5 +1,64 @@
 # control-plane-kit-server-sdk Agent Guide
 
+Canonical contract: `cpk-agent-contract/v1`
+
+Source: [CPK #1741](https://github.com/OpenJ92/control-plane-kit/issues/1741).
+This root guide carries the shared contract needed to work in this repository
+without another checkout. Local SDK rules may tighten it; they may not weaken
+authorization, Docker-only validation, truthful uncertainty, test ownership,
+GitHub-memory, or redaction requirements.
+
+## Shared Product Boundary
+
+CPK is a human-authorized, AI-assisted infrastructure control plane. Providers
+own external runtime truth. CPK owns topology, inspectable plans, execution of
+approved actions, durable history, and truthful bounded reports.
+
+- Provider reads and bounded reporting may be automatic.
+- Consequential mutation requires an inspectable plan and appropriate user
+  authorization.
+- Destructive cleanup, public exposure, cost/capacity or credential changes,
+  cross-provider movement, adoption, and ambiguous retries require explicit
+  approval.
+- Never blindly redispatch an interrupted or ambiguous external mutation.
+- Never fabricate success, ownership, graph advancement, or cleanup.
+
+This workload-facing SDK exposes bounded node-control contracts. It does not
+grant control-plane, provider, topology, credential-custody, or autonomous
+recovery authority.
+
+## Durable Memory And Collaboration
+
+GitHub issues, PRs, and material comments are durable project memory. Commits,
+hashes, local logs, `/tmp` packets, inventories, task messages, and chat are
+supporting coordinates only. Record decisions, releases, stops, evidence
+meaning, reviews, and handoffs on the governing issue or PR.
+
+When roles are assigned, North coordinates; Vale implements the bounded change;
+Meridian reviews independently and reports findings-first `PASS` or `HOLD`.
+Assignments and handoffs state the GitHub artifact, base/destination, scope,
+suite/prerequisites, authority limits, stop conditions, and next reviewer.
+Silence is not approval.
+
+Keep implementation and review proportional. Tests prove SDK public contracts,
+framework adapters, and security boundaries; they do not recreate Core or
+Operations state machines, police helper layout, or turn fixture examples into
+runtime invariants.
+
+## Shared Validation And Stops
+
+All executable validation uses the established Docker-backed `./test.sh`.
+Pinned mode is normal; `local-core` requires the explicitly selected Core
+checkout described by the script. Do not use host Python/PostgreSQL, venvs,
+host `pip`, alternate databases, shims, or custom wrappers. If the suite or a
+prerequisite is missing, cannot start, or fails for apparatus, stop and ask;
+do not improvise, silently retry, rebaseline, or repair shared state.
+
+One-shot wrappers, leases, live/provider-mutating gates, credential use, and
+destructive cleanup require explicit issue-specific authority. Stop on
+uncertain ownership, authority, base/destination, prerequisite, or effect
+outcome.
+
 `control-plane-kit-server-sdk` is the framework-neutral workload-facing SDK
 for Control Plane Kit node control. It consumes the pure contracts published
 by the pinned `control-plane-kit-core` distribution.
@@ -88,10 +147,8 @@ Use Docker-first validation and the Python standard-library `unittest`
 framework. Do not use host Python, pytest, `xfail`, hidden collection, or
 unapproved skips.
 
-Before issue #1485 installs the canonical package gate, use only the direct
-focused Docker command named by the child dry run. Do not add a provisional
-`test.sh`, Dockerfile, package-integrity framework, or workflow. After #1485,
-the checked-in `./test.sh` becomes the authoritative package gate.
+The checked-in `./test.sh` is the authoritative package gate. Do not replace it
+with host execution or an ad hoc focused container command.
 
 Test reports must distinguish focused, package, composition, source-live,
 published, and provider-mutating evidence. A green count does not make those
