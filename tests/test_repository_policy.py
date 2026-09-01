@@ -39,14 +39,16 @@ class RepositoryPolicyTests(unittest.TestCase):
         policy = self._read("AGENTS.md")
 
         for required in (
-            "tests-before-source",
-            "target-red",
-            "Docker-first",
-            "unittest",
-            "pytest",
+            "cpk-agent-contract/v1",
+            "Use this calibrated loop",
+            "current behavior and public contract",
+            "smallest bounded implementation and proportional tests",
+            "authoritative Docker-backed ./test.sh",
+            "focused target-red evidence only for an explicitly governed",
+            "control-plane-kit-server-sdk -> pinned control-plane-kit-core",
+            "GitHub issues, PRs, and material comments are durable project memory",
             "security",
-            "decision log",
-            "handoff",
+            "dependent handoff",
             "broad Docker prune",
         ):
             with self.subTest(required=required):
