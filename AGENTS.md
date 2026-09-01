@@ -72,7 +72,7 @@ state and transactions.
 
 ## Branch Flow
 
-Use the branch topology in `GIT-FLOW.md`:
+Inherit only the branch topology in `GIT-FLOW.md`:
 
 ```text
 main
@@ -83,22 +83,19 @@ main
 Issue branches target `develop`. Promote `develop` to `main` only when a
 coherent reviewed vertical is ready.
 
+The canonical proportional-evidence contract in this guide supersedes the
+legacy mandatory-red process in `GIT-FLOW.md`.
+
 ## Recursive Issue Loop
 
-Use this loop for every non-trivial issue:
+Use this calibrated loop for every non-trivial issue:
 
 ```text
-governing laws and tests
-  -> behavioral law cards
-    -> tests-before-source dry run
-      -> target public interface and split decision
-        -> focused target tests
-          -> focused target-red evidence
-            -> smallest coherent implementation
-              -> focused and affected validation
-                -> skeptical review
-                  -> decision log
-                    -> dependent handoff
+current behavior and public contract
+  -> smallest bounded implementation and proportional tests
+    -> authoritative Docker-backed ./test.sh
+      -> concrete review
+        -> decision log and dependent handoff
 ```
 
 Split an issue when it changes multiple public concepts, has unrelated test
@@ -109,6 +106,9 @@ is accepted.
 Tests must fail for missing behavior, not broken imports, collection, fixtures,
 or Docker setup. Do not weaken assertions, hide collection, add `xfail`, point
 tests at another implementation, or use skips to manufacture green evidence.
+Use law cards and focused target-red evidence only for an explicitly governed
+migration/parity issue or when a focused failure is needed to establish
+causality for missing behavior.
 
 ## Package Ownership
 
@@ -164,7 +164,7 @@ Record a concise decision log containing:
 
 - chosen shape and important snippets;
 - why it was chosen and alternatives rejected;
-- target-red and exact-head green evidence;
+- owning validation and its exact reviewed coordinate;
 - security and operational notes;
 - residual risks; and
 - the next issue handoff.
