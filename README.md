@@ -16,7 +16,7 @@ python -m pip install .
 
 It is not published to a package index. The base dependency is the immutable
 `control-plane-kit-core` source at
-`3d85dc76300bf88be923531445ce83e9b6c7b23e`; installing from a clean checkout
+`0ee72c3fcdfbee5094357152bdf070fbfc53393c`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
 Signature-verification dependencies are isolated in one exact optional extra:
@@ -30,6 +30,36 @@ install and root import remain free of both modules. This establishes bounded
 dependency availability only; #1498 owns the closed signed-grant verifier.
 These exact pins constrain the two named direct dependencies only.
 They do not lock transitive dependency versions, artifact hashes, or publisher attestations.
+
+FastAPI applications may install the public optional adapter dependency set with:
+
+```bash
+python -m pip install ".[fastapi]"
+```
+
+That extra contains the same verification pair plus `fastapi==0.141.1` and
+`starlette==1.6.0`. It supports the one public, optional FastAPI composition:
+
+```python
+from control_plane_kit_server_sdk.fastapi import install_cpk_control_routes
+
+install_cpk_control_routes(
+    app,
+    target=target,
+    declaration=declaration,
+    variables=variables,
+    command_verifier=command_verifier,
+    surface_read_verifier=surface_read_verifier,
+)
+```
+
+The installer validates and constructs the complete four-route CPK surface
+before replacing the host route list once. The SDK root remains lazy and
+framework-neutral.
+Authenticated APPLY invokes the caller-supplied variable and can mutate
+process-local or durable workload-owned state. The SDK adapter owns no storage,
+transaction, graph authority, or provider client; #1506 replay remains its
+accepted cancellation, retry, and convergence boundary.
 
 The root import exposes one neutral invocation value:
 
@@ -144,11 +174,42 @@ entry, retains published terminals for exactly 300 seconds, and never prunes an
 in-flight reservation. It is not durable: restart loses all entries, while
 domain-owned durable variables retain their own ledger and transaction truth.
 
-The coordinator is synchronous. The later #1507 route adapter must install one
-coordinator per application or route set, preserve admission before replay,
-and run the whole call on a worker thread rather than blocking an event loop.
-It adds no public SDK export, authentication claim, graph authority, provider
-effect, or persistence boundary.
+The coordinator is synchronous. The private #1551 FastAPI interpreter receives
+one coordinator per application or route set, preserves admission and exact
+target binding before replay, and runs interpretation through one worker-thread
+handoff rather than blocking an event loop. It adds no public SDK export,
+authentication claim, graph authority, provider effect, or persistence boundary.
+
+Surface-read authority uses a separate process-local public verification
+material lane. `WorkloadNodeControlSurfaceReadVerifierKeySet` accepts only the
+`WORKLOAD_NODE_CONTROL_SURFACE_READ` purpose, and its atomic holder never
+substitutes for the command holder. Consumers import the optional verifier
+directly:
+
+```python
+from control_plane_kit_server_sdk.verification import (
+    Ed25519WorkloadNodeControlSurfaceReadVerifier,
+)
+
+request = verifier.admit(
+    credential,
+    route_kind=kind,
+    candidate=None,
+)
+```
+
+The compact type is exactly
+`CPK-WORKLOAD-NODE-CONTROL-SURFACE-READ+JWT`, and its signed payload member is
+`workload_node_control_surface_read`. Credentials are bounded to 4,096 bytes;
+the protected header, payload, and signature segments are bounded to 512,
+3,840, and 128 bytes. Admission returns one exact core surface-read request.
+It is stateless: the same valid credential may be admitted again during its
+bounded lifetime. The verifier owns no private key, no HTTP framing, no
+registry lookup, no registry state, no result construction, and no replay
+store. The #1507 FastAPI adapter owns HTTP extraction, the installed-variable
+snapshot, and execution of the admitted read. It bounds route/body inputs and
+proves bodylessness before calling admission; successful admission precedes
+local declaration/registry access and result production.
 
 ## Validation
 
@@ -161,12 +222,13 @@ Run the authoritative Docker-first package gate with:
 The default gate is pinned package evidence. Before package build or dependency
 resolution, a structured TOML preflight requires `project.dependencies` to be
 the exact one-element immutable core coordinate and
-`project.optional-dependencies` to be the exact one-element `verification`
+`project.optional-dependencies` to be the exact `verification` and `fastapi`
 map declared in `pyproject.toml`. The gate then checks package integrity and
-builds once. A base container proves the SDK without optional dependencies;
-a separate verification container installs `.[verification]`, reruns the
-package tests, and proves exact installed versions and SDK-root import
-laziness. Both containers and the image have process-scoped names and cleanup.
+builds once. A base container proves the SDK without optional dependencies; a
+verification container proves `.[verification]`; and a FastAPI container
+installs `.[fastapi]`, runs the complete suite, and proves exact installed
+versions plus SDK-root import laziness. All containers and the image have
+process-scoped names and cleanup.
 
 Coordinated source development may explicitly replace only the core dependency:
 
@@ -182,4 +244,5 @@ checkout. Merely having a sibling checkout does not change what is tested.
 
 The repository does not own control-plane operations stores, cpk-server,
 Docker interpreters, server products, provider clients, or application state.
-FastAPI support is a later optional adapter rather than a base dependency.
+FastAPI support is an optional public submodule rather than a base or package-
+root dependency; the root import remains framework-neutral.

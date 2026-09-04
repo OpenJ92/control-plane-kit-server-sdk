@@ -16,12 +16,17 @@ PACKAGE_ROOT = SOURCE_ROOT / "control_plane_kit_server_sdk"
 CORE_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "3d85dc76300bf88be923531445ce83e9b6c7b23e.zip"
+    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip"
     "#subdirectory=control-plane-kit-core"
 )
 VERIFICATION_DEPENDENCIES = [
     "PyJWT==2.13.0",
     "cryptography==50.0.0",
+]
+FASTAPI_DEPENDENCIES = [
+    *VERIFICATION_DEPENDENCIES,
+    "fastapi==0.141.1",
+    "starlette==1.6.0",
 ]
 
 
@@ -44,7 +49,10 @@ class PackageFoundationTests(unittest.TestCase):
         self.assertEqual(project["dependencies"], [CORE_DEPENDENCY])
         self.assertEqual(
             project["optional-dependencies"],
-            {"verification": VERIFICATION_DEPENDENCIES},
+            {
+                "verification": VERIFICATION_DEPENDENCIES,
+                "fastapi": FASTAPI_DEPENDENCIES,
+            },
         )
         self.assertNotIn("scripts", project)
         self.assertEqual(
@@ -73,16 +81,20 @@ import control_plane_kit_server_sdk as sdk
 assert sdk.__version__ == "0.1.0"
 assert sdk.__all__ == [
     "AtomicControlPlaneVariable",
+    "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
+    "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
     "__version__",
 ]
 assert sdk.AtomicControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.atomic"
+assert sdk.AtomicWorkloadNodeControlSurfaceReadVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert sdk.AtomicWorkloadNodeControlVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert sdk.ControlPlaneInvocationContext.__module__ == "control_plane_kit_server_sdk.context"
 assert sdk.ControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.protocol"
+assert sdk.WorkloadNodeControlSurfaceReadVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert sdk.WorkloadNodeControlVerifierKeySet.__module__ == "control_plane_kit_server_sdk.verifier_keys"
 assert "control_plane_kit_core" in sys.modules
 for name in (
@@ -91,6 +103,8 @@ for name in (
     "control_plane_kit_secrets",
     "control_plane_kit_servers",
     "fastapi",
+    "starlette",
+    "anyio",
     "psycopg",
     "docker",
     "cloudflare",
@@ -122,12 +136,22 @@ for name in (
             "cryptography",
             "docker",
             "fastapi",
+            "starlette",
+            "anyio",
             "jwt",
             "psycopg",
         }
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.rglob("*.py")):
-            permitted = {"jwt"} if path.name == "verification.py" else set()
+            permitted: set[str] = set()
+            if path.name == "verification.py":
+                permitted.add("jwt")
+            if path.name in {
+                "_fastapi_variable_routes.py",
+                "_fastapi_surface_routes.py",
+                "fastapi.py",
+            }:
+                permitted.update({"fastapi", "starlette"})
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -149,7 +173,7 @@ for name in (
             "pip install .",
             "control_plane_kit_server_sdk",
             "__version__",
-            "3d85dc76300bf88be923531445ce83e9b6c7b23e",
+            "0ee72c3fcdfbee5094357152bdf070fbfc53393c",
             "not published",
         ):
             with self.subTest(required=required):

@@ -12,12 +12,17 @@ import unittest
 ACCEPTED_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "3d85dc76300bf88be923531445ce83e9b6c7b23e.zip"
+    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip"
     "#subdirectory=control-plane-kit-core"
 )
 ACCEPTED_VERIFICATION_DEPENDENCIES = (
     "PyJWT==2.13.0",
     "cryptography==50.0.0",
+)
+ACCEPTED_FASTAPI_DEPENDENCIES = (
+    *ACCEPTED_VERIFICATION_DEPENDENCIES,
+    "fastapi==0.141.1",
+    "starlette==1.6.0",
 )
 
 
@@ -55,12 +60,18 @@ class DependencyPreflightTests(unittest.TestCase):
         dependencies: tuple[str, ...] = ACCEPTED_VERIFICATION_DEPENDENCIES,
         *,
         extra_name: str = "verification",
+        fastapi_dependencies: tuple[str, ...] = ACCEPTED_FASTAPI_DEPENDENCIES,
+        fastapi_extra_name: str = "fastapi",
         additional_extras: tuple[tuple[str, tuple[str, ...]], ...] = (),
     ) -> str:
         entries = "".join(f'  "{dependency}",\n' for dependency in dependencies)
+        fastapi_entries = "".join(
+            f'  "{dependency}",\n' for dependency in fastapi_dependencies
+        )
         block = (
             "[project.optional-dependencies]\n"
             f"{extra_name} = [\n{entries}]\n"
+            f"{fastapi_extra_name} = [\n{fastapi_entries}]\n"
         )
         for name, values in additional_extras:
             extra_entries = "".join(f'  "{value}",\n' for value in values)
@@ -74,7 +85,7 @@ class DependencyPreflightTests(unittest.TestCase):
             (
                 "mutable-ref",
                 accepted.replace(
-                    "3d85dc76300bf88be923531445ce83e9b6c7b23e.zip",
+                    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip",
                     "main.zip",
                 ),
             ),
@@ -88,7 +99,7 @@ class DependencyPreflightTests(unittest.TestCase):
             (
                 "wrong-full-sha",
                 accepted.replace(
-                    "3d85dc76300bf88be923531445ce83e9b6c7b23e",
+                    "0ee72c3fcdfbee5094357152bdf070fbfc53393c",
                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 ),
             ),
@@ -127,6 +138,65 @@ class DependencyPreflightTests(unittest.TestCase):
                 "additional-verification-dependency",
                 self._document(
                     (*ACCEPTED_VERIFICATION_DEPENDENCIES, "another-package==1")
+                ),
+            ),
+            (
+                "missing-fastapi-extra",
+                self._document(fastapi_extra_name="http"),
+            ),
+            (
+                "missing-fastapi",
+                self._document(
+                    fastapi_dependencies=(
+                        *ACCEPTED_VERIFICATION_DEPENDENCIES,
+                        "starlette==1.6.0",
+                    ),
+                ),
+            ),
+            (
+                "wrong-fastapi-version",
+                self._document(
+                    fastapi_dependencies=(
+                        *ACCEPTED_VERIFICATION_DEPENDENCIES,
+                        "fastapi==0.140.0",
+                        "starlette==1.6.0",
+                    ),
+                ),
+            ),
+            (
+                "missing-starlette",
+                self._document(
+                    fastapi_dependencies=(
+                        *ACCEPTED_VERIFICATION_DEPENDENCIES,
+                        "fastapi==0.141.1",
+                    ),
+                ),
+            ),
+            (
+                "wrong-starlette-version",
+                self._document(
+                    fastapi_dependencies=(
+                        *ACCEPTED_VERIFICATION_DEPENDENCIES,
+                        "fastapi==0.141.1",
+                        "starlette==1.5.0",
+                    ),
+                ),
+            ),
+            (
+                "reordered-fastapi-dependencies",
+                self._document(
+                    fastapi_dependencies=tuple(
+                        reversed(ACCEPTED_FASTAPI_DEPENDENCIES)
+                    ),
+                ),
+            ),
+            (
+                "additional-fastapi-dependency",
+                self._document(
+                    fastapi_dependencies=(
+                        *ACCEPTED_FASTAPI_DEPENDENCIES,
+                        "another-package==1",
+                    ),
                 ),
             ),
             (
@@ -188,7 +258,7 @@ class DependencyPreflightTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("dependency-preflight=accepted", completed.stdout)
-        self.assertIn("3d85dc76300bf88be923531445ce83e9b6c7b23e", completed.stdout)
+        self.assertIn("0ee72c3fcdfbee5094357152bdf070fbfc53393c", completed.stdout)
 
     def test_mutable_or_wrong_coordinates_are_rejected_by_structured_preflight(self) -> None:
         for identity, document in self._mutations():

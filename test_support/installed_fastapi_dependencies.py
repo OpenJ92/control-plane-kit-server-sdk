@@ -5,7 +5,7 @@ import sys
 
 
 def _reject() -> int:
-    print("verification dependencies are not accepted", file=sys.stderr)
+    print("fastapi dependencies are not accepted", file=sys.stderr)
     return 2
 
 
@@ -16,7 +16,10 @@ def main() -> int:
         return _reject()
 
     if not (
-        "jwt" not in sys.modules
+        "fastapi" not in sys.modules
+        and "starlette" not in sys.modules
+        and "anyio" not in sys.modules
+        and "jwt" not in sys.modules
         and "cryptography" not in sys.modules
     ):
         return _reject()
@@ -25,6 +28,8 @@ def main() -> int:
         accepted = (
             version("PyJWT") == "2.13.0"
             and version("cryptography") == "50.0.0"
+            and version("fastapi") == "0.141.1"
+            and version("starlette") == "1.6.0"
         )
     except Exception:
         return _reject()
@@ -32,25 +37,13 @@ def main() -> int:
         return _reject()
 
     try:
-        from control_plane_kit_server_sdk.verification import (
-            Ed25519WorkloadNodeControlSurfaceReadVerifier,
-            Ed25519WorkloadNodeControlVerifier,
-        )
-        import jwt
-        import cryptography
+        import control_plane_kit_server_sdk.fastapi as sdk_fastapi
     except Exception:
         return _reject()
-
-    if Ed25519WorkloadNodeControlVerifier.__module__ != (
-        "control_plane_kit_server_sdk.verification"
-    ):
-        return _reject()
-    if Ed25519WorkloadNodeControlSurfaceReadVerifier.__module__ != (
-        "control_plane_kit_server_sdk.verification"
-    ):
+    if sdk_fastapi.__all__ != ["install_cpk_control_routes"]:
         return _reject()
 
-    print("verification dependencies import ok")
+    print("fastapi dependencies import ok")
     return 0
 
 

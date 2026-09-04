@@ -18,9 +18,13 @@ from control_plane_kit_core import (
     ControlPlaneCommandCodec,
     ControlPlaneTransitionPrecondition,
     DelegatedWorkloadNodeControlGrant,
+    DelegatedWorkloadNodeControlSurfaceReadGrant,
+    DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+    DelegatedWorkloadNodeControlSurfaceReadGrantProfile,
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
     DelegationPublicKey,
+    NodeControlCanonicalization,
     NodeControlCommandRequest,
     NodeControlCommandRequestCodec,
     NodeControlGraphReference,
@@ -28,8 +32,12 @@ from control_plane_kit_core import (
     NodeControlOperation,
     NodeControlPayload,
     NodeControlRequestDigest,
+    NodeControlSurfaceReadKind,
+    NodeControlSurfaceReadRequest,
+    NodeControlSurfaceReadRequestDigest,
     NodeControlTarget,
     ScalarControlState,
+    WorkloadNodeControlSurfaceDeclarationIdentity,
 )
 from control_plane_kit_server_sdk.verifier_keys import (
     AtomicWorkloadNodeControlVerifierKeySet,
@@ -48,6 +56,14 @@ NOW = 150
 BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 MAX_STRUCTURAL_JSON_DEPTH = 16
 MAX_STRUCTURAL_JSON_MEMBERS = 64
+SURFACE_TOKEN_TYPE = "CPK-WORKLOAD-NODE-CONTROL-SURFACE-READ+JWT"
+SURFACE_PAYLOAD_KEY = "workload_node_control_surface_read"
+SURFACE_ERROR_MESSAGE = "workload node-control surface-read credential was rejected"
+MAX_SURFACE_CREDENTIAL_BYTES = 4_096
+MAX_SURFACE_HEADER_SEGMENT_BYTES = 512
+MAX_SURFACE_PAYLOAD_SEGMENT_BYTES = 3_840
+MAX_SURFACE_SIGNATURE_SEGMENT_BYTES = 128
+_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -138,6 +154,15 @@ def _json_with_pad_bits(value: dict[str, object]) -> bytes:
     encoded = _json_value(value)
     while len(encoded) % 3 == 0:
         encoded += b" "
+    return encoded
+
+
+def _json_for_base64url_length(value: dict[str, object], length: int) -> bytes:
+    encoded = _json_value(value)
+    while len(_b64url(encoded)) < length:
+        encoded += b" "
+    if len(_b64url(encoded)) != length:
+        raise AssertionError("requested base64url length is unreachable")
     return encoded
 
 
@@ -298,6 +323,108 @@ def _candidate(request: NodeControlCommandRequest) -> bytes:
     return _json_value(request.descriptor())
 
 
+def _surface_request(
+    kind: NodeControlSurfaceReadKind = NodeControlSurfaceReadKind.CAPABILITIES,
+    **changes: object,
+) -> NodeControlSurfaceReadRequest:
+    values: dict[str, object] = {
+        "target": _target(),
+        "kind": kind,
+        "declaration_identity": WorkloadNodeControlSurfaceDeclarationIdentity(
+            "d" * 64
+        ),
+        "request_id": "surface-read-1",
+    }
+    values.update(changes)
+    return NodeControlSurfaceReadRequest(**values)
+
+
+def _surface_grant(
+    request: NodeControlSurfaceReadRequest,
+    *,
+    key_id: str = "surface-key-a",
+    **changes: object,
+) -> DelegatedWorkloadNodeControlSurfaceReadGrant:
+    values: dict[str, object] = {
+        "profile": DelegatedWorkloadNodeControlSurfaceReadGrantProfile.V1,
+        "canonicalization": NodeControlCanonicalization.JCS_RFC8785_V1,
+        "purpose": DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+        "issuer": ISSUER,
+        "key_id": key_id,
+        "audience": AUDIENCE,
+        "target": request.target,
+        "kind": request.kind,
+        "declaration_identity": request.declaration_identity,
+        "request_id": request.request_id,
+        "request_digest": request.canonical_digest(),
+        "issued_at": 100,
+        "not_before": 100,
+        "expires_at": 200,
+        "jti": "surface-grant-1",
+    }
+    values.update(changes)
+    return DelegatedWorkloadNodeControlSurfaceReadGrant(**values)
+
+
+def _surface_payload(
+    grant_value: object,
+    **changes: object,
+) -> dict[str, object]:
+    if isinstance(grant_value, DelegatedWorkloadNodeControlSurfaceReadGrant):
+        values: dict[str, object] = {
+            "iss": grant_value.issuer,
+            "aud": grant_value.audience,
+            "iat": grant_value.issued_at,
+            "nbf": grant_value.not_before,
+            "exp": grant_value.expires_at,
+            "jti": grant_value.jti,
+            SURFACE_PAYLOAD_KEY: grant_value.descriptor(),
+        }
+    else:
+        values = {
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+            "iat": 100,
+            "nbf": 100,
+            "exp": 200,
+            "jti": "surface-grant-1",
+            SURFACE_PAYLOAD_KEY: grant_value,
+        }
+    values.update(changes)
+    return values
+
+
+def _surface_header(
+    key_id: str = "surface-key-a",
+    **changes: object,
+) -> dict[str, object]:
+    values: dict[str, object] = {
+        "alg": "EdDSA",
+        "kid": key_id,
+        "typ": SURFACE_TOKEN_TYPE,
+    }
+    values.update(changes)
+    return values
+
+
+def _surface_token(
+    private_key: ed25519.Ed25519PrivateKey,
+    grant: DelegatedWorkloadNodeControlSurfaceReadGrant,
+    *,
+    header_changes: dict[str, object] | None = None,
+    payload_changes: dict[str, object] | None = None,
+) -> bytes:
+    return _signed_compact(
+        private_key,
+        header_bytes=_json_value(
+            _surface_header(grant.key_id, **(header_changes or {}))
+        ),
+        payload_bytes=_json_value(
+            _surface_payload(grant, **(payload_changes or {}))
+        ),
+    )
+
+
 @contextmanager
 def _replaced_attribute(owner: object, name: str, replacement: object):
     original = getattr(owner, name)
@@ -447,13 +574,15 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
         )
         self.assertNotEqual(b".".join((header, payload, mutated_signature)), token)
 
-    def test_public_module_exports_only_one_verifier_and_one_error(self) -> None:
+    def test_public_module_exports_only_verifiers_and_errors(self) -> None:
         module = self._module()
 
         self.assertEqual(
             module.__all__,
             [
+                "Ed25519WorkloadNodeControlSurfaceReadVerifier",
                 "Ed25519WorkloadNodeControlVerifier",
+                "WorkloadNodeControlSurfaceReadVerificationError",
                 "WorkloadNodeControlVerificationError",
             ],
         )
@@ -1292,6 +1421,1284 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
             "replay",
             "#1150",
             "no private key",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, readme + decision)
+
+
+class SignedSurfaceReadVerificationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.private_a = ed25519.Ed25519PrivateKey.generate()
+        self.private_b = ed25519.Ed25519PrivateKey.generate()
+        self.key_a = DelegationPublicKey(
+            "surface-key-a",
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(self.private_a),
+        )
+        self.key_b = DelegationPublicKey(
+            "surface-key-b",
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(self.private_b),
+        )
+
+    def _module(self):
+        return importlib.import_module(VERIFICATION_MODULE)
+
+    def _key_types(self) -> tuple[type, type]:
+        module = importlib.import_module(
+            "control_plane_kit_server_sdk.verifier_keys"
+        )
+        try:
+            return (
+                module.WorkloadNodeControlSurfaceReadVerifierKeySet,
+                module.AtomicWorkloadNodeControlSurfaceReadVerifierKeySet,
+            )
+        except AttributeError:
+            self.fail("surface-read verifier key types are not implemented")
+
+    def _snapshot(self, *keys: DelegationPublicKey):
+        key_set_type, _ = self._key_types()
+        return key_set_type(
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
+            keys,
+        )
+
+    def _holder(self, *keys: DelegationPublicKey):
+        _, holder_type = self._key_types()
+        return holder_type(self._snapshot(*keys))
+
+    def _verifier(
+        self,
+        *,
+        holder=None,
+        clock=None,
+        issuer: str = ISSUER,
+        audience: str = AUDIENCE,
+    ):
+        module = self._module()
+        try:
+            verifier_type = module.Ed25519WorkloadNodeControlSurfaceReadVerifier
+        except AttributeError:
+            self.fail("signed surface-read verifier is not implemented")
+        return verifier_type(
+            self._holder(self.key_a) if holder is None else holder,
+            expected_issuer=issuer,
+            expected_audience=audience,
+            clock=(lambda: NOW) if clock is None else clock,
+        )
+
+    def _admit(
+        self,
+        token: object,
+        request: NodeControlSurfaceReadRequest,
+        *,
+        verifier=None,
+        route_kind: object = _UNSET,
+        candidate: object = None,
+    ) -> NodeControlSurfaceReadRequest:
+        return (verifier or self._verifier()).admit(
+            token,
+            route_kind=request.kind if route_kind is _UNSET else route_kind,
+            candidate=candidate,
+        )
+
+    def _assert_rejected(self, operation) -> BaseException:
+        module = self._module()
+        try:
+            error_type = module.WorkloadNodeControlSurfaceReadVerificationError
+        except AttributeError:
+            self.fail("surface-read verification error is not implemented")
+        with self.assertRaises(error_type) as raised:
+            operation()
+        self.assertEqual(str(raised.exception), SURFACE_ERROR_MESSAGE)
+        self.assertEqual(
+            repr(raised.exception),
+            "WorkloadNodeControlSurfaceReadVerificationError("
+            f"{SURFACE_ERROR_MESSAGE!r})",
+        )
+        self.assertEqual(vars(raised.exception), {})
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        return raised.exception
+
+    def _assert_before_maintained_admission(
+        self,
+        token: object,
+        request: NodeControlSurfaceReadRequest,
+        *,
+        route_kind: object = _UNSET,
+        candidate: object = None,
+    ) -> None:
+        calls = {"jwt": 0, "grant": 0, "snapshot": 0, "clock": 0}
+        _, holder_type = self._key_types()
+
+        def forbidden_jwt(*_args: object, **_kwargs: object) -> object:
+            calls["jwt"] += 1
+            raise AssertionError("maintained signature admission was reached")
+
+        def forbidden_grant(*_args: object, **_kwargs: object) -> object:
+            calls["grant"] += 1
+            raise AssertionError("signed grant decoding was reached")
+
+        def forbidden_snapshot(*_args: object, **_kwargs: object) -> object:
+            calls["snapshot"] += 1
+            raise AssertionError("verification key snapshot was reached")
+
+        def forbidden_clock() -> int:
+            calls["clock"] += 1
+            raise AssertionError("trusted clock was reached")
+
+        holder = self._holder(self.key_a)
+        verifier = self._verifier(holder=holder, clock=forbidden_clock)
+        with _replaced_attribute(jwt, "decode", forbidden_jwt), _replaced_attribute(
+            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            "decode",
+            forbidden_grant,
+        ), _replaced_attribute(holder_type, "snapshot", forbidden_snapshot):
+            self._assert_rejected(
+                lambda: self._admit(
+                    token,
+                    request,
+                    verifier=verifier,
+                    route_kind=route_kind,
+                    candidate=candidate,
+                )
+            )
+        self.assertEqual(calls, {"jwt": 0, "grant": 0, "snapshot": 0, "clock": 0})
+
+    def test_public_optional_module_and_root_exports_are_exact(self) -> None:
+        module = self._module()
+        self.assertEqual(
+            module.__all__,
+            [
+                "Ed25519WorkloadNodeControlSurfaceReadVerifier",
+                "Ed25519WorkloadNodeControlVerifier",
+                "WorkloadNodeControlSurfaceReadVerificationError",
+                "WorkloadNodeControlVerificationError",
+            ],
+        )
+        self.assertEqual(
+            module.Ed25519WorkloadNodeControlSurfaceReadVerifier.__module__,
+            VERIFICATION_MODULE,
+        )
+        root = importlib.import_module("control_plane_kit_server_sdk")
+        self.assertNotIn(
+            "Ed25519WorkloadNodeControlSurfaceReadVerifier",
+            root.__all__,
+        )
+        self.assertFalse(
+            hasattr(root, "Ed25519WorkloadNodeControlSurfaceReadVerifier")
+        )
+
+    def test_constructor_and_stateless_shape_are_exact_slotted_and_redacted(self) -> None:
+        verifier = self._verifier()
+        verifier_type = type(verifier)
+        self.assertEqual(
+            verifier_type.__slots__,
+            ("_holder", "_expected_issuer", "_expected_audience", "_clock"),
+        )
+        self.assertFalse(hasattr(verifier, "__dict__"))
+        self.assertEqual(
+            repr(verifier),
+            "Ed25519WorkloadNodeControlSurfaceReadVerifier()",
+        )
+
+        command_holder = AtomicWorkloadNodeControlVerifierKeySet(
+            WorkloadNodeControlVerifierKeySet(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+                (self.key_a,),
+            )
+        )
+        for keyword, value in (
+            ("holder", command_holder),
+            ("issuer", SensitiveText(ISSUER)),
+            ("audience", SensitiveText(AUDIENCE)),
+            ("clock", SensitiveCandidate()),
+        ):
+            with self.subTest(keyword=keyword):
+                arguments = {
+                    "holder": self._holder(self.key_a),
+                    "issuer": ISSUER,
+                    "audience": AUDIENCE,
+                    "clock": lambda: NOW,
+                }
+                arguments[keyword] = value
+                with self.assertRaises((TypeError, ValueError)) as raised:
+                    verifier_type(
+                        arguments["holder"],
+                        expected_issuer=arguments["issuer"],
+                        expected_audience=arguments["audience"],
+                        clock=arguments["clock"],
+                    )
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertIsNone(raised.exception.__context__)
+                self.assertNotIn("nested-secret", str(raised.exception))
+                self.assertNotIn("candidate-secret", str(raised.exception))
+
+    def test_both_read_kinds_return_only_the_exact_reconstructed_request(self) -> None:
+        for kind in NodeControlSurfaceReadKind:
+            with self.subTest(kind=kind):
+                request = _surface_request(kind)
+                token = _surface_token(self.private_a, _surface_grant(request))
+                admitted = self._admit(token, request)
+                self.assertIs(type(admitted), NodeControlSurfaceReadRequest)
+                self.assertEqual(admitted, request)
+                self.assertIsNot(admitted, request)
+                self.assertEqual(admitted.canonical_bytes(), request.canonical_bytes())
+
+    def test_trusted_route_and_no_payload_inputs_reject_before_all_collaborators(self) -> None:
+        request = _surface_request()
+        token = _surface_token(self.private_a, _surface_grant(request))
+        for route_kind in (
+            None,
+            "capabilities",
+            NodeControlOperation.READ_STATE,
+            SensitiveCandidate(),
+            ExplodingReprCandidate(),
+        ):
+            with self.subTest(route_kind_type=type(route_kind).__name__):
+                self._assert_before_maintained_admission(
+                    token,
+                    request,
+                    route_kind=route_kind,
+                )
+        for candidate in (
+            b"",
+            b"{}",
+            "",
+            0,
+            False,
+            SensitiveCandidate(),
+            ExplodingReprCandidate(),
+        ):
+            with self.subTest(candidate_type=type(candidate).__name__):
+                self._assert_before_maintained_admission(
+                    token,
+                    request,
+                    candidate=candidate,
+                )
+
+    def test_maximum_valid_credential_and_every_independent_bound(self) -> None:
+        maximum_text = lambda first, tail, size: first + tail * (size - 1)
+        target = NodeControlTarget(
+            workspace_id=_reference(
+                NodeControlGraphReferenceRole.WORKSPACE,
+                maximum_text("W", "w", 128),
+            ),
+            graph_revision=_reference(
+                NodeControlGraphReferenceRole.GRAPH_REVISION,
+                maximum_text("G", "g", 128),
+            ),
+            node_id=_reference(
+                NodeControlGraphReferenceRole.NODE,
+                maximum_text("N", "n", 128),
+            ),
+            provider_socket_name=_reference(
+                NodeControlGraphReferenceRole.PROVIDER_SOCKET,
+                maximum_text("S", "s", 128),
+            ),
+        )
+        request = _surface_request(
+            target=target,
+            declaration_identity=WorkloadNodeControlSurfaceDeclarationIdentity(
+                "f" * 64
+            ),
+            request_id=maximum_text("R", "r", 128),
+        )
+        private_key = ed25519.Ed25519PrivateKey.generate()
+        key_id = maximum_text("k", "k", 128)
+        key = DelegationPublicKey(
+            key_id,
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(private_key),
+        )
+        maximum_epoch = 2**53 - 1
+        grant = _surface_grant(
+            request,
+            key_id=key_id,
+            issuer=maximum_text("I", "i", 256),
+            audience=maximum_text("A", "a", 256),
+            issued_at=maximum_epoch - 300,
+            not_before=maximum_epoch - 300,
+            expires_at=maximum_epoch,
+            jti=maximum_text("J", "j", 128),
+        )
+        token = _surface_token(private_key, grant)
+        segments = token.split(b".")
+
+        self.assertEqual(tuple(map(len, segments)), (271, 3_679, 86))
+        self.assertEqual(len(token), 4_038)
+        self.assertLessEqual(len(token), MAX_SURFACE_CREDENTIAL_BYTES)
+        self.assertLessEqual(len(segments[0]), MAX_SURFACE_HEADER_SEGMENT_BYTES)
+        self.assertLessEqual(len(segments[1]), MAX_SURFACE_PAYLOAD_SEGMENT_BYTES)
+        self.assertLessEqual(len(segments[2]), MAX_SURFACE_SIGNATURE_SEGMENT_BYTES)
+        verifier = self._verifier(
+            holder=self._holder(key),
+            issuer=grant.issuer,
+            audience=grant.audience,
+            clock=lambda: maximum_epoch - 1,
+        )
+        self.assertEqual(self._admit(token, request, verifier=verifier), request)
+
+        edge_request = _surface_request()
+        edge_grant = _surface_grant(edge_request)
+        edge_header = _surface_header(edge_grant.key_id)
+        edge_payload = _surface_payload(edge_grant)
+        aggregate = _signed_compact(
+            self.private_a,
+            header_bytes=_json_for_base64url_length(edge_header, 512),
+            payload_bytes=_json_for_base64url_length(edge_payload, 3_500),
+        )
+        header_over = _signed_compact(
+            self.private_a,
+            header_bytes=_json_for_base64url_length(edge_header, 514),
+            payload_bytes=_json_value(edge_payload),
+        )
+        payload_over = _signed_compact(
+            self.private_a,
+            header_bytes=_json_value(edge_header),
+            payload_bytes=_json_for_base64url_length(edge_payload, 3_842),
+        )
+        signature_over = _signed_compact(
+            self.private_a,
+            header_bytes=_json_value(edge_header),
+            payload_bytes=_json_value(edge_payload),
+            signature_segment=_b64url(b"\x00" * 97),
+        )
+        self.assertEqual(tuple(map(len, aggregate.split(b"."))), (512, 3_500, 86))
+        self.assertEqual(len(aggregate), 4_100)
+        self.assertEqual(len(header_over.split(b".")[0]), 514)
+        self.assertLessEqual(len(header_over), MAX_SURFACE_CREDENTIAL_BYTES)
+        self.assertEqual(len(payload_over.split(b".")[1]), 3_842)
+        self.assertLessEqual(len(payload_over), MAX_SURFACE_CREDENTIAL_BYTES)
+        self.assertEqual(len(signature_over.split(b".")[2]), 130)
+        self.assertLessEqual(len(signature_over), MAX_SURFACE_CREDENTIAL_BYTES)
+
+        independent_edges = (
+            aggregate,
+            header_over,
+            payload_over,
+            signature_over,
+        )
+        for identity, candidate_token in enumerate(independent_edges):
+            with self.subTest(edge=identity):
+                self._assert_before_maintained_admission(
+                    candidate_token,
+                    edge_request,
+                )
+
+    def test_compact_and_structural_profiles_reject_before_maintained_admission(self) -> None:
+        request = _surface_request()
+        grant = _surface_grant(request)
+        malformed = (
+            b"",
+            b"a.b",
+            b"a.b.c.d",
+            b"a=.b.c",
+            b"a.b.%%",
+            b"a.b.c\xff",
+        )
+        for token in malformed:
+            with self.subTest(token=token[:12]):
+                self._assert_before_maintained_admission(token, request)
+
+        header = _surface_header()
+        payload = _surface_payload(grant)
+        grant_descriptor = grant.descriptor()
+        target_descriptor = grant.target.descriptor()
+
+        header_bytes = _json_with_pad_bits(header)
+        payload_bytes = _json_with_pad_bits(payload)
+        canonical = _signed_compact(
+            self.private_a,
+            header_bytes=header_bytes,
+            payload_bytes=payload_bytes,
+        )
+        header_segment, payload_segment, signature_segment = canonical.split(b".")
+        noncanonical_header = _noncanonical_tail(header_segment)
+        noncanonical_payload = _noncanonical_tail(payload_segment)
+        noncanonical_tokens = (
+            noncanonical_header
+            + b"."
+            + payload_segment
+            + b"."
+            + _b64url(
+                self.private_a.sign(
+                    noncanonical_header + b"." + payload_segment
+                )
+            ),
+            header_segment
+            + b"."
+            + noncanonical_payload
+            + b"."
+            + _b64url(
+                self.private_a.sign(
+                    header_segment + b"." + noncanonical_payload
+                )
+            ),
+            b".".join(
+                (
+                    header_segment,
+                    payload_segment,
+                    _noncanonical_tail(signature_segment),
+                )
+            ),
+        )
+        for identity, token in enumerate(noncanonical_tokens):
+            with self.subTest(noncanonical=identity):
+                self._assert_before_maintained_admission(token, request)
+
+        missing_unknown_wrong: list[tuple[bytes, bytes]] = [
+            (
+                _json_value({key: value for key, value in header.items() if key != "typ"}),
+                _json_value(payload),
+            ),
+            (_json_value({**header, "unknown": 1}), _json_value(payload)),
+            (b"[]", _json_value(payload)),
+            (_json_value({**header, "kid": 7}), _json_value(payload)),
+            (
+                _json_value(header),
+                _json_value({key: value for key, value in payload.items() if key != "jti"}),
+            ),
+            (_json_value(header), _json_value({**payload, "unknown": 1})),
+            (_json_value(header), b"[]"),
+            (_json_value(header), _json_value({**payload, "iss": 7})),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            key: value
+                            for key, value in grant_descriptor.items()
+                            if key != "request_digest"
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {**grant_descriptor, "unknown": 1},
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value({**payload, SURFACE_PAYLOAD_KEY: []}),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "issued_at": "100",
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": {
+                                key: value
+                                for key, value in target_descriptor.items()
+                                if key != "node_id"
+                            },
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": {**target_descriptor, "unknown": 1},
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": [],
+                        },
+                    }
+                ),
+            ),
+            (
+                _json_value(header),
+                _json_value(
+                    {
+                        **payload,
+                        SURFACE_PAYLOAD_KEY: {
+                            **grant_descriptor,
+                            "target": {**target_descriptor, "node_id": 7},
+                        },
+                    }
+                ),
+            ),
+        ]
+        for identity, (candidate_header, candidate_payload) in enumerate(
+            missing_unknown_wrong
+        ):
+            with self.subTest(closed_profile=identity):
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=candidate_header,
+                    payload_bytes=candidate_payload,
+                )
+                self._assert_before_maintained_admission(token, request)
+
+        duplicates: list[tuple[bytes, bytes]] = []
+        for key in header:
+            duplicates.append(
+                (_raw_object(_duplicate_pair(header, key)), _json_value(payload))
+            )
+        for key in payload:
+            duplicates.append(
+                (_json_value(header), _raw_object(_duplicate_pair(payload, key)))
+            )
+        for key in grant_descriptor:
+            raw_grant = _raw_object(_duplicate_pair(grant_descriptor, key))
+            duplicates.append(
+                (
+                    _json_value(header),
+                    _raw_object(
+                        [
+                            (
+                                name,
+                                RawJson(raw_grant)
+                                if name == SURFACE_PAYLOAD_KEY
+                                else value,
+                            )
+                            for name, value in payload.items()
+                        ]
+                    ),
+                )
+            )
+        for key in target_descriptor:
+            raw_target = _raw_object(_duplicate_pair(target_descriptor, key))
+            raw_grant = _raw_object(
+                [
+                    (
+                        name,
+                        RawJson(raw_target) if name == "target" else value,
+                    )
+                    for name, value in grant_descriptor.items()
+                ]
+            )
+            duplicates.append(
+                (
+                    _json_value(header),
+                    _raw_object(
+                        [
+                            (
+                                name,
+                                RawJson(raw_grant)
+                                if name == SURFACE_PAYLOAD_KEY
+                                else value,
+                            )
+                            for name, value in payload.items()
+                        ]
+                    ),
+                )
+            )
+        for identity, (header_bytes, payload_bytes) in enumerate(duplicates):
+            with self.subTest(duplicate=identity):
+                token = _signed_compact(
+                    self.private_a,
+                    header_bytes=header_bytes,
+                    payload_bytes=payload_bytes,
+                )
+                self._assert_before_maintained_admission(token, request)
+
+        excessive_depth = (
+            b"[" * (MAX_STRUCTURAL_JSON_DEPTH + 1)
+            + b"0"
+            + b"]" * (MAX_STRUCTURAL_JSON_DEPTH + 1)
+        )
+        deep_payload = _raw_object(
+            [
+                (name, RawJson(excessive_depth) if name == SURFACE_PAYLOAD_KEY else value)
+                for name, value in payload.items()
+            ]
+        )
+        many_members = _raw_object(
+            [(f"m{index}", index) for index in range(MAX_STRUCTURAL_JSON_MEMBERS + 1)]
+        )
+        for payload_bytes in (deep_payload, many_members):
+            token = _signed_compact(
+                self.private_a,
+                header_bytes=_json_value(header),
+                payload_bytes=payload_bytes,
+            )
+            self._assert_before_maintained_admission(token, request)
+
+    def test_profile_algorithm_signature_and_authority_families_are_disjoint(self) -> None:
+        request = _surface_request()
+        grant = _surface_grant(request)
+        for header_changes, payload_changes in (
+            ({"alg": "HS256"}, None),
+            ({"typ": TOKEN_TYPE}, None),
+            (None, {"workload_node_control": grant.descriptor()}),
+        ):
+            token = _surface_token(
+                self.private_a,
+                grant,
+                header_changes=header_changes,
+                payload_changes=payload_changes,
+            )
+            self._assert_before_maintained_admission(token, request)
+
+        self._assert_rejected(
+            lambda: self._admit(
+                _surface_token(self.private_b, grant),
+                request,
+            )
+        )
+        wrong_purpose = replace(
+            grant,
+            purpose=DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                _surface_token(self.private_a, wrong_purpose),
+                request,
+            )
+        )
+
+        shared_private = ed25519.Ed25519PrivateKey.generate()
+        shared_key = DelegationPublicKey(
+            "shared-key",
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(shared_private),
+        )
+        surface_grant = _surface_grant(request, key_id="shared-key")
+        command_request = _request(NodeControlOperation.READ_STATE)
+        command_grant = _grant(command_request, key_id="shared-key")
+        surface_verifier = self._verifier(holder=self._holder(shared_key))
+        command_holder = AtomicWorkloadNodeControlVerifierKeySet(
+            WorkloadNodeControlVerifierKeySet(
+                DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+                (shared_key,),
+            )
+        )
+        command_verifier = self._module().Ed25519WorkloadNodeControlVerifier(
+            command_holder,
+            expected_issuer=ISSUER,
+            expected_audience=AUDIENCE,
+            clock=lambda: NOW,
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                _token(shared_private, command_grant),
+                request,
+                verifier=surface_verifier,
+            )
+        )
+        with self.assertRaises(self._module().WorkloadNodeControlVerificationError):
+            command_verifier.admit(
+                _surface_token(shared_private, surface_grant),
+                route_operation=command_request.operation,
+                route_variable=command_request.variable_name,
+                candidate=None,
+            )
+
+    def test_authenticated_outer_inner_congruence_rejects_after_pyjwt(self) -> None:
+        request = _surface_request()
+        grant = _surface_grant(request)
+        original_decode = jwt.decode
+        cases: list[tuple[bytes, object, str, str]] = []
+
+        cases.append(
+            (
+                _surface_token(
+                    self.private_b,
+                    grant,
+                    header_changes={"kid": self.key_b.key_id},
+                ),
+                self._holder(self.key_a, self.key_b),
+                ISSUER,
+                AUDIENCE,
+            )
+        )
+        for field, outer_value in (
+            ("iss", "outer-issuer"),
+            ("aud", "outer-audience"),
+            ("iat", 101),
+            ("nbf", 101),
+            ("exp", 201),
+            ("jti", "outer-jti"),
+        ):
+            cases.append(
+                (
+                    _surface_token(
+                        self.private_a,
+                        grant,
+                        payload_changes={field: outer_value},
+                    ),
+                    self._holder(self.key_a),
+                    outer_value if field == "iss" else ISSUER,
+                    outer_value if field == "aud" else AUDIENCE,
+                )
+            )
+
+        verification_module = self._module()
+        for identity, (token, holder, issuer, audience) in enumerate(cases):
+            calls = {"jwt": 0, "clock": 0, "request": 0}
+
+            def counted_decode(*args: object, **kwargs: object) -> object:
+                calls["jwt"] += 1
+                return original_decode(*args, **kwargs)
+
+            def forbidden_clock() -> int:
+                calls["clock"] += 1
+                raise AssertionError("trusted clock was reached")
+
+            def forbidden_request(*_args: object, **_kwargs: object) -> object:
+                calls["request"] += 1
+                raise AssertionError("request construction was reached")
+
+            verifier = self._verifier(
+                holder=holder,
+                issuer=issuer,
+                audience=audience,
+                clock=forbidden_clock,
+            )
+
+            with self.subTest(identity=identity), _replaced_attribute(
+                jwt,
+                "decode",
+                counted_decode,
+            ), _replaced_attribute(
+                verification_module,
+                "NodeControlSurfaceReadRequest",
+                forbidden_request,
+            ):
+                self._assert_rejected(
+                    lambda: self._admit(token, request, verifier=verifier)
+                )
+                self.assertEqual(calls, {"jwt": 1, "clock": 0, "request": 0})
+
+    def test_maintained_admission_options_key_rotation_and_failure_order_are_exact(self) -> None:
+        request_a = _surface_request()
+        grant_a = _surface_grant(request_a)
+        token_a = _surface_token(self.private_a, grant_a)
+        holder = self._holder(self.key_a)
+        verifier = self._verifier(holder=holder)
+        captured: list[tuple[tuple[object, ...], dict[str, object]]] = []
+        original_decode = jwt.decode
+
+        def captured_decode(*args: object, **kwargs: object) -> object:
+            captured.append((args, kwargs))
+            return original_decode(*args, **kwargs)
+
+        with _replaced_attribute(jwt, "decode", captured_decode):
+            self.assertEqual(
+                self._admit(token_a, request_a, verifier=verifier),
+                request_a,
+            )
+        self.assertEqual(len(captured), 1)
+        args, kwargs = captured[0]
+        self.assertIs(args[0], token_a)
+        self.assertEqual(args[1], self.key_a.public_key_pem)
+        self.assertEqual(kwargs["algorithms"], ["EdDSA"])
+        self.assertEqual(kwargs["issuer"], ISSUER)
+        self.assertEqual(kwargs["audience"], AUDIENCE)
+        self.assertEqual(
+            kwargs["options"],
+            {
+                "require": ["iss", "aud", "iat", "nbf", "exp", "jti"],
+                "verify_exp": False,
+                "verify_nbf": False,
+                "verify_iat": False,
+                "strict_aud": True,
+            },
+        )
+
+        request_b = _surface_request(
+            NodeControlSurfaceReadKind.STATUS,
+            request_id="surface-read-b",
+        )
+        grant_b = _surface_grant(
+            request_b,
+            key_id=self.key_b.key_id,
+            jti="surface-grant-b",
+        )
+        token_b = _surface_token(self.private_b, grant_b)
+        holder.replace(self._snapshot(self.key_a, self.key_b))
+        self.assertEqual(self._admit(token_a, request_a, verifier=verifier), request_a)
+        self.assertEqual(self._admit(token_b, request_b, verifier=verifier), request_b)
+        holder.replace(self._snapshot(self.key_b))
+        self._assert_rejected(
+            lambda: self._admit(token_a, request_a, verifier=verifier)
+        )
+        self.assertEqual(self._admit(token_b, request_b, verifier=verifier), request_b)
+
+        malformed = DelegationPublicKey(
+            self.key_a.key_id,
+            DelegationKeyAlgorithm.ED25519,
+            "-----BEGIN PUBLIC KEY-----\nnot-cryptographic-material\n"
+            "-----END PUBLIC KEY-----\n",
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(holder=self._holder(malformed)),
+            )
+        )
+        rsa_private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        rsa_pem = rsa_private.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("ascii")
+        rsa_material = DelegationPublicKey(
+            self.key_a.key_id,
+            DelegationKeyAlgorithm.ED25519,
+            rsa_pem,
+        )
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(holder=self._holder(rsa_material)),
+            )
+        )
+        wrong_purpose = self._snapshot(self.key_a)
+        object.__setattr__(
+            wrong_purpose,
+            "purpose",
+            DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
+        )
+        _, surface_holder_type = self._key_types()
+        self._assert_rejected(
+            lambda: self._admit(
+                token_a,
+                request_a,
+                verifier=self._verifier(
+                    holder=surface_holder_type(wrong_purpose)
+                ),
+            )
+        )
+
+        calls = {"jwt": 0, "grant": 0, "clock": 0}
+
+        def counted_jwt(*_args: object, **_kwargs: object) -> object:
+            calls["jwt"] += 1
+            raise AssertionError("maintained signature admission was reached")
+
+        def counted_grant(*_args: object, **_kwargs: object) -> object:
+            calls["grant"] += 1
+            raise AssertionError("signed grant decoding was reached")
+
+        def counted_clock() -> int:
+            calls["clock"] += 1
+            raise AssertionError("trusted clock was reached")
+
+        unknown = _surface_token(
+            self.private_a,
+            grant_a,
+            header_changes={"kid": "unknown-key"},
+        )
+        with _replaced_attribute(jwt, "decode", counted_jwt), _replaced_attribute(
+            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            "decode",
+            counted_grant,
+        ):
+            self._assert_rejected(
+                lambda: self._admit(
+                    unknown,
+                    request_a,
+                    verifier=self._verifier(
+                        holder=self._holder(self.key_a),
+                        clock=counted_clock,
+                    ),
+                )
+            )
+        self.assertEqual(calls, {"jwt": 0, "grant": 0, "clock": 0})
+
+        calls = {"jwt": 0, "grant": 0, "clock": 0}
+
+        def failing_jwt(*args: object, **kwargs: object) -> object:
+            calls["jwt"] += 1
+            return original_decode(*args, **kwargs)
+
+        with _replaced_attribute(jwt, "decode", failing_jwt), _replaced_attribute(
+            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            "decode",
+            counted_grant,
+        ):
+            self._assert_rejected(
+                lambda: self._admit(
+                    _surface_token(self.private_b, grant_a),
+                    request_a,
+                    verifier=self._verifier(
+                        holder=self._holder(self.key_a),
+                        clock=counted_clock,
+                    ),
+                )
+            )
+        self.assertEqual(calls, {"jwt": 1, "grant": 0, "clock": 0})
+
+    def test_foreign_authority_families_never_substitute(self) -> None:
+        request = _surface_request()
+        shared_private = ed25519.Ed25519PrivateKey.generate()
+        shared_key = DelegationPublicKey(
+            "shared-key",
+            DelegationKeyAlgorithm.ED25519,
+            _public_pem(shared_private),
+        )
+        verifier = self._verifier(holder=self._holder(shared_key))
+        command_requests = (
+            _request(NodeControlOperation.READ_STATE),
+            _request(NodeControlOperation.APPLY_COMMAND),
+        )
+        foreign = [
+            _token(
+                shared_private,
+                _grant(command_request, key_id="shared-key"),
+            )
+            for command_request in command_requests
+        ]
+        outer = {
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+            "iat": 100,
+            "nbf": 100,
+            "exp": 200,
+            "jti": "foreign-grant",
+        }
+        for token_type, member in (
+            ("CPK-GATEWAY-PROBE+JWT", "gateway_probe_grant"),
+            ("CPK-GATEWAY-TRANSIT+JWT", "gateway_transit_grant"),
+        ):
+            foreign.append(
+                _signed_compact(
+                    shared_private,
+                    header_bytes=_json_value(
+                        {"alg": "EdDSA", "kid": "shared-key", "typ": token_type}
+                    ),
+                    payload_bytes=_json_value(
+                        {**outer, member: {"authority": "foreign"}}
+                    ),
+                )
+            )
+        foreign.extend((b"operator-bearer", b"static-bearer"))
+
+        for identity, token in enumerate(foreign):
+            with self.subTest(authority=identity):
+                self._assert_rejected(
+                    lambda token=token: self._admit(
+                        token,
+                        request,
+                        verifier=verifier,
+                    )
+                )
+
+    def test_exact_request_binding_route_time_one_clock_and_no_replay_state(self) -> None:
+        request = _surface_request()
+        target_mismatches = (
+            _target(
+                workspace_id=_reference(
+                    NodeControlGraphReferenceRole.WORKSPACE,
+                    "other-workspace",
+                )
+            ),
+            _target(
+                graph_revision=_reference(
+                    NodeControlGraphReferenceRole.GRAPH_REVISION,
+                    "other-revision",
+                )
+            ),
+            _target(
+                node_id=_reference(
+                    NodeControlGraphReferenceRole.NODE,
+                    "other-node",
+                )
+            ),
+            _target(
+                provider_socket_name=_reference(
+                    NodeControlGraphReferenceRole.PROVIDER_SOCKET,
+                    "other-socket",
+                )
+            ),
+        )
+        mismatches = tuple(
+            _surface_grant(request, target=target)
+            for target in target_mismatches
+        ) + (
+            _surface_grant(request, kind=NodeControlSurfaceReadKind.STATUS),
+            _surface_grant(
+                request,
+                declaration_identity=WorkloadNodeControlSurfaceDeclarationIdentity("e" * 64),
+            ),
+            _surface_grant(request, request_id="other-request"),
+            _surface_grant(
+                request,
+                request_digest=NodeControlSurfaceReadRequestDigest("0" * 64),
+            ),
+        )
+        for identity, grant in enumerate(mismatches):
+            with self.subTest(mismatch=identity):
+                self._assert_rejected(
+                    lambda grant=grant: self._admit(
+                        _surface_token(self.private_a, grant),
+                        request,
+                    )
+                )
+
+        valid_grant = _surface_grant(request)
+        token = _surface_token(self.private_a, valid_grant)
+        self.assertEqual(
+            self._admit(
+                token,
+                request,
+                verifier=self._verifier(clock=lambda: valid_grant.not_before),
+            ),
+            request,
+        )
+        clock_calls = 0
+
+        def clock() -> int:
+            nonlocal clock_calls
+            clock_calls += 1
+            return NOW
+
+        verifier = self._verifier(clock=clock)
+        self.assertEqual(self._admit(token, request, verifier=verifier), request)
+        self.assertEqual(self._admit(token, request, verifier=verifier), request)
+        self.assertEqual(clock_calls, 2)
+
+        for now in (99, 200, -1, 2**53, True, SensitiveCandidate()):
+            with self.subTest(now=type(now).__name__ if not isinstance(now, int) else now):
+                self._assert_rejected(
+                    lambda now=now: self._admit(
+                        token,
+                        request,
+                        verifier=self._verifier(clock=lambda: now),
+                    )
+                )
+        self._assert_rejected(
+            lambda: self._admit(
+                token,
+                request,
+                route_kind=NodeControlSurfaceReadKind.STATUS,
+            )
+        )
+
+        for field, value in (
+            ("profile", "other-surface-read-grant.v1"),
+            ("canonicalization", "other-canonicalization.v1"),
+        ):
+            descriptor = valid_grant.descriptor()
+            descriptor[field] = value
+            payload = _surface_payload(valid_grant)
+            payload[SURFACE_PAYLOAD_KEY] = descriptor
+            invalid_token = _signed_compact(
+                self.private_a,
+                header_bytes=_json_value(_surface_header(valid_grant.key_id)),
+                payload_bytes=_json_value(payload),
+            )
+            with self.subTest(field=field):
+                self._assert_rejected(
+                    lambda invalid_token=invalid_token: self._admit(
+                        invalid_token,
+                        request,
+                    )
+                )
+
+    def test_one_admission_uses_one_complete_surface_key_snapshot(self) -> None:
+        request = _surface_request()
+        token = _surface_token(self.private_a, _surface_grant(request))
+        holder = self._holder(self.key_a)
+        entered = Event()
+        release = Event()
+        result: list[object] = []
+        original_decode = jwt.decode
+
+        def blocking_decode(*args: object, **kwargs: object) -> object:
+            entered.set()
+            if not release.wait(3):
+                raise AssertionError("surface snapshot test did not release")
+            return original_decode(*args, **kwargs)
+
+        def admit() -> None:
+            try:
+                result.append(
+                    self._admit(
+                        token,
+                        request,
+                        verifier=self._verifier(holder=holder),
+                    )
+                )
+            except BaseException as error:
+                result.append(error)
+
+        with _replaced_attribute(jwt, "decode", blocking_decode):
+            thread = Thread(target=admit)
+            thread.start()
+            self.assertTrue(entered.wait(3))
+            holder.replace(self._snapshot(self.key_b))
+            release.set()
+            thread.join(3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(result, [request])
+
+    def test_representations_errors_and_source_exclude_sensitive_or_outer_work(self) -> None:
+        request = _surface_request()
+        token = _surface_token(self.private_a, _surface_grant(request))
+        holder = self._holder(self.key_a)
+        verifier = self._verifier(holder=holder)
+        key_set = holder.snapshot()
+        self.assertEqual(
+            repr(verifier),
+            "Ed25519WorkloadNodeControlSurfaceReadVerifier()",
+        )
+        for rendered in (repr(verifier), repr(key_set), repr(holder)):
+            for marker in (
+                ISSUER,
+                AUDIENCE,
+                self.key_a.key_id,
+                self.key_a.fingerprint_sha256,
+                self.key_a.public_key_pem,
+                request.request_id,
+                request.declaration_identity.value,
+                request.target.node_id.value,
+            ):
+                self.assertNotIn(marker, rendered)
+
+        errors: list[BaseException] = []
+        errors.append(
+            self._assert_rejected(
+                lambda: self._admit(
+                    token,
+                    request,
+                    verifier=verifier,
+                    candidate=SensitiveCandidate(),
+                )
+            )
+        )
+
+        def failing_jwt(*_args: object, **_kwargs: object) -> object:
+            raise RuntimeError(
+                "InvalidSignature authorization: Bearer crypto-secret"
+            )
+
+        with _replaced_attribute(jwt, "decode", failing_jwt):
+            errors.append(
+                self._assert_rejected(
+                    lambda: self._admit(token, request, verifier=verifier)
+                )
+            )
+
+        def failing_grant(*_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("credential=grant-secret target=router")
+
+        with _replaced_attribute(
+            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            "decode",
+            failing_grant,
+        ):
+            errors.append(
+                self._assert_rejected(
+                    lambda: self._admit(token, request, verifier=verifier)
+                )
+            )
+
+        for error in errors:
+            rendered_error = str(error) + repr(error)
+            self.assertLessEqual(len(rendered_error.encode("utf-8")), 256)
+            for marker in (
+                token.decode("ascii"),
+                "surface-grant-1",
+                self.key_a.key_id,
+                self.key_a.fingerprint_sha256,
+                self.key_a.public_key_pem,
+                ISSUER,
+                AUDIENCE,
+                "candidate-secret",
+                "crypto-secret",
+                "grant-secret",
+                "Traceback",
+                "InvalidSignature",
+                request.request_id,
+                request.declaration_identity.value,
+                request.target.node_id.value,
+            ):
+                self.assertNotIn(marker, rendered_error)
+
+        module_path = PACKAGE_ROOT / "verification.py"
+        source = module_path.read_text(encoding="utf-8")
+        for excluded in (
+            "fastapi",
+            "NodeControlSurfaceCapabilitiesResult",
+            "NodeControlSurfaceStatusResult",
+            "NodeControlSurfaceRegistryCoverage",
+            "ControlPlaneVariable",
+            "_replay",
+        ):
+            self.assertNotIn(excluded, source)
+        tree = ast.parse(source, filename=str(module_path))
+        imported_roots: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_roots.update(
+                    alias.name.split(".", 1)[0] for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_roots.add(node.module.split(".", 1)[0])
+        self.assertTrue(
+            imported_roots.isdisjoint(
+                {
+                    "control_plane_kit_operations",
+                    "control_plane_kit_servers",
+                    "fastapi",
+                    "psycopg",
+                    "docker",
+                    "cloudflare",
+                }
+            )
+        )
+
+    def test_docs_describe_stateless_credential_admission_and_1507_handoff(self) -> None:
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        decision_path = (
+            REPOSITORY_ROOT
+            / "docs"
+            / "decisions"
+            / "0012-signed-surface-read-admission.md"
+        )
+        self.assertTrue(decision_path.is_file())
+        decision = decision_path.read_text(encoding="utf-8")
+        for required in (
+            "Ed25519WorkloadNodeControlSurfaceReadVerifier",
+            SURFACE_TOKEN_TYPE,
+            SURFACE_PAYLOAD_KEY,
+            "4,096",
+            "3,840",
+            "stateless",
+            "may be admitted again",
+            "#1507",
+            "no private key",
+            "no HTTP",
+            "no registry",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, readme + decision)

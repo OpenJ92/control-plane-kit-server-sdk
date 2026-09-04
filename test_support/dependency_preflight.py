@@ -6,7 +6,7 @@ import sys
 import tomllib
 
 
-ACCEPTED_CORE_SHA = "3d85dc76300bf88be923531445ce83e9b6c7b23e"
+ACCEPTED_CORE_SHA = "0ee72c3fcdfbee5094357152bdf070fbfc53393c"
 ACCEPTED_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
@@ -16,8 +16,14 @@ ACCEPTED_VERIFICATION_DEPENDENCIES = [
     "PyJWT==2.13.0",
     "cryptography==50.0.0",
 ]
+ACCEPTED_FASTAPI_DEPENDENCIES = [
+    *ACCEPTED_VERIFICATION_DEPENDENCIES,
+    "fastapi==0.141.1",
+    "starlette==1.6.0",
+]
 ACCEPTED_OPTIONAL_DEPENDENCIES = {
     "verification": ACCEPTED_VERIFICATION_DEPENDENCIES,
+    "fastapi": ACCEPTED_FASTAPI_DEPENDENCIES,
 }
 
 
@@ -63,6 +69,8 @@ def main() -> int:
         f"sha={ACCEPTED_CORE_SHA} "
         "subdirectory=control-plane-kit-core "
         "verification=PyJWT==2.13.0,cryptography==50.0.0"
+        " fastapi=PyJWT==2.13.0,cryptography==50.0.0,"
+        "fastapi==0.141.1,starlette==1.6.0"
     )
     return 0
 
