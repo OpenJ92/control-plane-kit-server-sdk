@@ -11,9 +11,13 @@ not a permanent freshness ledger or a claim of full behavior audit.
 Read [context](src/control_plane_kit_server_sdk/context.py.md), then
 [protocol](src/control_plane_kit_server_sdk/protocol.py.md), then
 [atomic variable](src/control_plane_kit_server_sdk/atomic.py.md) for the neutral
-extension boundary. Verification, replay and optional FastAPI routes have
-separate owners; their pending companions do not make the context an authority
-token.
+extension boundary. Continue through [verification](src/control_plane_kit_server_sdk/verification.py.md),
+[process-local replay](src/control_plane_kit_server_sdk/_replay.py.md), and
+[optional FastAPI installation](src/control_plane_kit_server_sdk/fastapi.py.md)
+for the separate admission, deduplication and HTTP owners. The invocation
+context is not an authority token. [The package gate](test.sh.md) and its support
+companions distinguish source checks, installed-package evidence and live
+runtime acceptance.
 
 Initial source coordinate: develop 7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79.
 The metadata selects Core 0ee72c3fcdfbee5094357152bdf070fbfc53393c.
