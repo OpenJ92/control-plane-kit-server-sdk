@@ -1,11 +1,13 @@
 # Initial SDK companion coverage
 
 Source: develop 7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79, [issue #18](https://github.com/OpenJ92/control-plane-kit-server-sdk/issues/18).
-55 original tracked paths: 0 authored awaiting review, 8 reviewed, 28 pending, 19 excluded.
+55 original tracked paths: 0 authored awaiting review, 11 reviewed, 25 pending, 19 excluded.
 Source owners and selected imported Core contracts were read directly; test
 navigation uses selected assertions. Vale independently reviewed the first eight
 companions against their owners and the selected Core dependency; larger tests
-received selected assertion review, not a full audit. No tests run.
+received selected assertion review, not a full audit. Vale also approved the
+three verifier-key/facade/test companions after full source and selected Core
+owner reads, with targeted key-test assertions. No tests run.
 This inventory excludes new documentation itself and does not certify freshness.
 
 | Source | Status | Disposition |
@@ -34,7 +36,7 @@ This inventory excludes new documentation itself and does not certify freshness.
 | `docs/decisions/0014-atomic-fastapi-control-route-installation.md` | excluded | Existing decision/security prose remains its authoritative document. |
 | `docs/security/0001-foundation-review.md` | excluded | Existing decision/security prose remains its authoritative document. |
 | `pyproject.toml` | reviewed | [Companion](pyproject.toml.md) |
-| `src/control_plane_kit_server_sdk/__init__.py` | pending | Assigned to North; not yet authored. |
+| `src/control_plane_kit_server_sdk/__init__.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/__init__.py.md) |
 | `src/control_plane_kit_server_sdk/_fastapi_surface_routes.py` | pending | Assigned to North; not yet authored. |
 | `src/control_plane_kit_server_sdk/_fastapi_variable_routes.py` | pending | Assigned to North; not yet authored. |
 | `src/control_plane_kit_server_sdk/_replay.py` | pending | Assigned to North; not yet authored. |
@@ -44,7 +46,7 @@ This inventory excludes new documentation itself and does not certify freshness.
 | `src/control_plane_kit_server_sdk/protocol.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/protocol.py.md) |
 | `src/control_plane_kit_server_sdk/py.typed` | reviewed | [Companion](src/control_plane_kit_server_sdk/py.typed.md) |
 | `src/control_plane_kit_server_sdk/verification.py` | pending | Assigned to North; not yet authored. |
-| `src/control_plane_kit_server_sdk/verifier_keys.py` | pending | Assigned to North; not yet authored. |
+| `src/control_plane_kit_server_sdk/verifier_keys.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/verifier_keys.py.md) |
 | `test.sh` | pending | Assigned to North; not yet authored. |
 | `test_support/dependency_preflight.py` | pending | Assigned to North; not yet authored. |
 | `test_support/installed_fastapi_dependencies.py` | pending | Assigned to North; not yet authored. |
@@ -64,4 +66,4 @@ This inventory excludes new documentation itself and does not certify freshness.
 | `tests/test_repository_policy.py` | pending | Assigned to North; not yet authored. |
 | `tests/test_variable_protocol.py` | reviewed | [Companion](tests/test_variable_protocol.py.md) |
 | `tests/test_verification.py` | pending | Assigned to North; not yet authored. |
-| `tests/test_verifier_keys.py` | pending | Assigned to North; not yet authored. |
+| `tests/test_verifier_keys.py` | reviewed | [Companion](tests/test_verifier_keys.py.md) |
