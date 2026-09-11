@@ -1,7 +1,7 @@
 # Initial SDK companion coverage
 
 Source: develop 7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79, [issue #18](https://github.com/OpenJ92/control-plane-kit-server-sdk/issues/18).
-55 original tracked paths: 0 authored awaiting review, 13 reviewed, 23 pending, 19 excluded.
+55 original tracked paths: 0 authored awaiting review, 15 reviewed, 21 pending, 19 excluded.
 Source owners and selected imported Core contracts were read directly; test
 navigation uses selected assertions. Vale independently reviewed the first eight
 companions against their owners and the selected Core dependency; larger tests
@@ -11,6 +11,10 @@ owner reads, with targeted key-test assertions. No tests run.
 North independently reviewed the two Vale-authored verification companions against
 the full verifier owner, selected pinned Core laws and selected test assertions;
 this is not a full large-test or transitive cryptography audit.
+North also reviewed both replay companions against the full replay owner and
+selected test assertions. The cancellation wording is scoped to the caught
+dispatch, normalization and completion-clock paths; no universal cancellation
+guarantee or executed validation is claimed.
 This inventory excludes new documentation itself and does not certify freshness.
 
 | Source | Status | Disposition |
@@ -42,7 +46,7 @@ This inventory excludes new documentation itself and does not certify freshness.
 | `src/control_plane_kit_server_sdk/__init__.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/__init__.py.md) |
 | `src/control_plane_kit_server_sdk/_fastapi_surface_routes.py` | pending | Assigned to Vale; not yet authored. |
 | `src/control_plane_kit_server_sdk/_fastapi_variable_routes.py` | pending | Assigned to Vale; not yet authored. |
-| `src/control_plane_kit_server_sdk/_replay.py` | pending | Assigned to Vale; not yet authored. |
+| `src/control_plane_kit_server_sdk/_replay.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/_replay.py.md) |
 | `src/control_plane_kit_server_sdk/atomic.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/atomic.py.md) |
 | `src/control_plane_kit_server_sdk/context.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/context.py.md) |
 | `src/control_plane_kit_server_sdk/fastapi.py` | pending | Assigned to Vale; not yet authored. |
@@ -65,7 +69,7 @@ This inventory excludes new documentation itself and does not certify freshness.
 | `tests/test_fastapi_variable_routes.py` | pending | Assigned to Vale; not yet authored. |
 | `tests/test_invocation_context.py` | reviewed | [Companion](tests/test_invocation_context.py.md) |
 | `tests/test_package_foundation.py` | pending | Assigned to Vale; not yet authored. |
-| `tests/test_process_local_replay.py` | pending | Assigned to Vale; not yet authored. |
+| `tests/test_process_local_replay.py` | reviewed | [Companion](tests/test_process_local_replay.py.md) |
 | `tests/test_repository_policy.py` | pending | Assigned to Vale; not yet authored. |
 | `tests/test_variable_protocol.py` | reviewed | [Companion](tests/test_variable_protocol.py.md) |
 | `tests/test_verification.py` | reviewed | [Companion](tests/test_verification.py.md) |
