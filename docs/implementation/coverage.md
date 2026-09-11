@@ -1,9 +1,11 @@
 # Initial SDK companion coverage
 
 Source: develop 7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79, [issue #18](https://github.com/OpenJ92/control-plane-kit-server-sdk/issues/18).
-55 original tracked paths: 8 authored, 0 reviewed, 28 pending, 19 excluded.
+55 original tracked paths: 0 authored awaiting review, 8 reviewed, 28 pending, 19 excluded.
 Source owners and selected imported Core contracts were read directly; test
-navigation uses selected assertions. Peer review remains pending. No tests run.
+navigation uses selected assertions. Vale independently reviewed the first eight
+companions against their owners and the selected Core dependency; larger tests
+received selected assertion review, not a full audit. No tests run.
 This inventory excludes new documentation itself and does not certify freshness.
 
 | Source | Status | Disposition |
@@ -31,16 +33,16 @@ This inventory excludes new documentation itself and does not certify freshness.
 | `docs/decisions/0013-private-fastapi-variable-routes.md` | excluded | Existing decision/security prose remains its authoritative document. |
 | `docs/decisions/0014-atomic-fastapi-control-route-installation.md` | excluded | Existing decision/security prose remains its authoritative document. |
 | `docs/security/0001-foundation-review.md` | excluded | Existing decision/security prose remains its authoritative document. |
-| `pyproject.toml` | authored | [Companion](pyproject.toml.md) |
+| `pyproject.toml` | reviewed | [Companion](pyproject.toml.md) |
 | `src/control_plane_kit_server_sdk/__init__.py` | pending | Assigned to North; not yet authored. |
 | `src/control_plane_kit_server_sdk/_fastapi_surface_routes.py` | pending | Assigned to North; not yet authored. |
 | `src/control_plane_kit_server_sdk/_fastapi_variable_routes.py` | pending | Assigned to North; not yet authored. |
 | `src/control_plane_kit_server_sdk/_replay.py` | pending | Assigned to North; not yet authored. |
-| `src/control_plane_kit_server_sdk/atomic.py` | authored | [Companion](src/control_plane_kit_server_sdk/atomic.py.md) |
-| `src/control_plane_kit_server_sdk/context.py` | authored | [Companion](src/control_plane_kit_server_sdk/context.py.md) |
+| `src/control_plane_kit_server_sdk/atomic.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/atomic.py.md) |
+| `src/control_plane_kit_server_sdk/context.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/context.py.md) |
 | `src/control_plane_kit_server_sdk/fastapi.py` | pending | Assigned to North; not yet authored. |
-| `src/control_plane_kit_server_sdk/protocol.py` | authored | [Companion](src/control_plane_kit_server_sdk/protocol.py.md) |
-| `src/control_plane_kit_server_sdk/py.typed` | authored | [Companion](src/control_plane_kit_server_sdk/py.typed.md) |
+| `src/control_plane_kit_server_sdk/protocol.py` | reviewed | [Companion](src/control_plane_kit_server_sdk/protocol.py.md) |
+| `src/control_plane_kit_server_sdk/py.typed` | reviewed | [Companion](src/control_plane_kit_server_sdk/py.typed.md) |
 | `src/control_plane_kit_server_sdk/verification.py` | pending | Assigned to North; not yet authored. |
 | `src/control_plane_kit_server_sdk/verifier_keys.py` | pending | Assigned to North; not yet authored. |
 | `test.sh` | pending | Assigned to North; not yet authored. |
@@ -53,13 +55,13 @@ This inventory excludes new documentation itself and does not certify freshness.
 | `test_support/tests/test_gate_contract.py` | pending | Assigned to North; not yet authored. |
 | `test_support/tests/test_package_integrity.py` | pending | Assigned to North; not yet authored. |
 | `tests/approved_skips.json` | pending | Assigned to North; not yet authored. |
-| `tests/test_atomic_variable.py` | authored | [Companion](tests/test_atomic_variable.py.md) |
+| `tests/test_atomic_variable.py` | reviewed | [Companion](tests/test_atomic_variable.py.md) |
 | `tests/test_fastapi_control_routes.py` | pending | Assigned to North; not yet authored. |
 | `tests/test_fastapi_variable_routes.py` | pending | Assigned to North; not yet authored. |
-| `tests/test_invocation_context.py` | authored | [Companion](tests/test_invocation_context.py.md) |
+| `tests/test_invocation_context.py` | reviewed | [Companion](tests/test_invocation_context.py.md) |
 | `tests/test_package_foundation.py` | pending | Assigned to North; not yet authored. |
 | `tests/test_process_local_replay.py` | pending | Assigned to North; not yet authored. |
 | `tests/test_repository_policy.py` | pending | Assigned to North; not yet authored. |
-| `tests/test_variable_protocol.py` | authored | [Companion](tests/test_variable_protocol.py.md) |
+| `tests/test_variable_protocol.py` | reviewed | [Companion](tests/test_variable_protocol.py.md) |
 | `tests/test_verification.py` | pending | Assigned to North; not yet authored. |
 | `tests/test_verifier_keys.py` | pending | Assigned to North; not yet authored. |
