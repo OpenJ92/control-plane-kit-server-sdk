@@ -163,16 +163,40 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
         )
         self.assertEqual(self.admit(padded), self.request)
         parts = padded.split(b".")
-        malformed = (
-            b"x" * 4609,
-            b".".join((parts[0] + b"A", parts[1], parts[2])),
-            b".".join((parts[0], parts[1] + b"A", parts[2])),
-            b".".join((parts[0], parts[1], b"A" * 129)),
-            b".".join((parts[0], parts[1], b"A" * 128)),
+        header_over = fixtures._signed_compact(
+            self.private,
+            header_bytes=fixtures._json_for_base64url_length(self.header(normal), 514),
+            payload_bytes=fixtures._json_value(self.payload(normal)),
         )
-        for index, value in enumerate(malformed):
-            with self.subTest(case=index):
-                self.rejected(lambda: self.admit(value))
+        payload_over = fixtures._signed_compact(
+            self.private, header_bytes=fixtures._json_value(self.header(normal)),
+            payload_bytes=fixtures._json_for_base64url_length(self.payload(normal), 3970),
+        )
+        normal_parts = self.token().split(b".")
+        signature_over = b".".join((
+            normal_parts[0], normal_parts[1], fixtures._b64url(b"s" * 97),
+        ))
+        aggregate_over = b".".join((parts[0], parts[1], fixtures._b64url(b"s" * 95)))
+        self.assertEqual(len(header_over.split(b".")[0]), 514)
+        self.assertEqual(len(payload_over.split(b".")[1]), 3970)
+        self.assertEqual(len(signature_over.split(b".")[2]), 130)
+        self.assertEqual(tuple(map(len, aggregate_over.split(b"."))), (512, 3968, 127))
+        self.assertEqual(len(aggregate_over), 4609)
+        # First reachable encoded lengths above the caps have canonical framing.
+        # Header/payload cases are genuinely signed; signature/aggregate cases
+        # must reject before maintained crypto, not merely fail signature size.
+        calls = []
+        original = jwt.decode
+        def record(*args, **kwargs):
+            calls.append(1)
+            return original(*args, **kwargs)
+        with fixtures._replaced_attribute(jwt, "decode", record):
+            for index, value in enumerate((header_over, payload_over, signature_over, aggregate_over)):
+                with self.subTest(case=index):
+                    for segment in value.split(b"."):
+                        self.assertEqual(fixtures._b64url(fixtures._b64url_decode(segment)), segment)
+                    self.rejected(lambda: self.admit(value))
+        self.assertEqual(calls, [])
 
     def test_closed_framing_and_json_reject_before_signature_admission(self):
         grant = self.grant()
@@ -183,9 +207,12 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
         duplicate_target = fixtures._raw_object(
             list(grant.target.descriptor().items()) + [("node_id", "other")],
         )
-        duplicate_payload = {**payload, PAYLOAD_KEY: {
+        duplicate_grant = fixtures.RawJson(fixtures._raw_object(list({
             **grant.descriptor(), "target": fixtures.RawJson(duplicate_target),
-        }}
+        }.items())))
+        duplicate_payload = fixtures.RawJson(fixtures._raw_object(list({
+            **payload, PAYLOAD_KEY: duplicate_grant,
+        }.items())))
         cases = (
             b"", token.decode("ascii"), b"\xff", token + b".",
             b".".join((parts[0] + b"=", parts[1], parts[2])),
