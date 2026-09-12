@@ -16,7 +16,7 @@ python -m pip install .
 
 It is not published to a package index. The base dependency is the immutable
 `control-plane-kit-core` source at
-`0ee72c3fcdfbee5094357152bdf070fbfc53393c`; installing from a clean checkout
+`95452249d0340707a5cdffe737e34669e9d53165`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
 Signature-verification dependencies are isolated in one exact optional extra:
@@ -56,6 +56,40 @@ install_cpk_control_routes(
 The installer validates and constructs the complete four-route CPK surface
 before replacing the host route list once. The SDK root remains lazy and
 framework-neutral.
+
+Dedicated semantic-health credential admission is available separately in the
+verification extra:
+
+```python
+from control_plane_kit_server_sdk.verification import Ed25519WorkloadNodeHealthReadVerifier
+
+verifier = Ed25519WorkloadNodeHealthReadVerifier(
+    health_key_holder, expected_issuer=issuer, expected_audience=audience, clock=clock,
+)
+health_request = verifier.admit(
+    credential, route_kind=kind, candidate=None,
+    expected_target=installed_target, expected_runtime_id=installed_runtime,
+    expected_declaration=installed_v2_declaration,
+)
+```
+
+The holder is an `AtomicWorkloadNodeHealthReadVerifierKeySet` containing an exact
+`WorkloadNodeHealthReadVerifierKeySet` for `WORKLOAD_NODE_HEALTH_READ`. It holds
+public verification material only. Trusted startup composition supplies the
+local target, runtime, declaration, issuer, audience, clock and key state;
+incoming credentials or forwarded fields must not supply the expected context.
+Admission checks a dedicated signed profile against those independent values
+and returns ordinary Core `NodeHealthReadRequest` data. It has no callback,
+network, replay cache, graph-admission proof or credential custody. Repeated
+valid admission retains the same observation identity.
+
+SDK #22 deliberately adopts Core `95452249d0340707a5cdffe737e34669e9d53165`,
+including changed shared public-wire contracts as well as health declarations.
+[Decision 0015](docs/decisions/0015-signed-health-read-admission.md) records the
+admission boundary and credential limits. SDK #23 owns callback dispatch and
+health-only/mixed FastAPI installation; the installer above still installs the
+existing four routes and requires both existing verifiers.
+
 Authenticated APPLY invokes the caller-supplied variable and can mutate
 process-local or durable workload-owned state. The SDK adapter owns no storage,
 transaction, graph authority, or provider client; #1506 replay remains its
