@@ -6,7 +6,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from control_plane_kit_core import NodeHealthReadKind
 from control_plane_kit_core.control_routes import NODE_HEALTH_ROUTES
-from control_plane_kit_server_sdk._fastapi_variable_routes import (
+from control_plane_kit_server_sdk._http_framing import (
     _MAX_BODY_BYTES,
     _MAX_PATH_BYTES,
     _RequestInvalid,

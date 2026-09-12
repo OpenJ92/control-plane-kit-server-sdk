@@ -38,6 +38,7 @@ def main() -> int:
             Ed25519WorkloadNodeHealthReadVerifier,
         )
         from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
+        from control_plane_kit_server_sdk._control_dispatch import _PreparedControlDispatch
         import jwt
         import cryptography
     except Exception:
@@ -59,6 +60,7 @@ def main() -> int:
 
     if (
         WorkloadNodeHealthReadDispatcher.__module__ != "control_plane_kit_server_sdk.health"
+        or _PreparedControlDispatch.__module__ != "control_plane_kit_server_sdk._control_dispatch"
         or any(name in sys.modules for name in ("fastapi", "starlette", "anyio"))
     ):
         return _reject()

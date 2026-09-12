@@ -6,3 +6,5 @@ This private builder consumes the already validated neutral dispatcher and creat
 One run_in_threadpool call performs signature/local-context admission, callback and Core result serialization. Successful semantic results use200 even for unhealthy/unknown/unsupported. All adapter-generated responses use no-store and fixed errors map framing/auth/unknown-kind/internal failures to400/413/401/404/500. Errors contain no callback diagnostics and no fabricated outcome. Router-owned redirects/HEAD/unmatched errors run no callback and remain ordinary host behavior.
 
 Workload admission denial proves zero protected callbacks, potentially after HTTP reached the workload. It does not prove gateway zero-network denial. No listener, polling, request forwarding, command replay or cache is added. Worker threads are not timeout/cancellation enforcement. The real signed ASGI tests distinguish these boundaries and preserve unrelated application responses.
+
+SDK #26 changes only the framing import to the shared neutral `_http_framing` owner; health behavior and the accepted dispatcher remain unchanged.
