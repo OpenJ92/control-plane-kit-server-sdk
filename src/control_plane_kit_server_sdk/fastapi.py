@@ -9,7 +9,6 @@ from starlette.routing import Host, Mount, Route, WebSocketRoute
 from control_plane_kit_core import (
     NodeControlTarget,
     WorkloadNodeControlSurfaceDeclaration,
-    WorkloadNodeControlSurfaceDeclarationProfile,
 )
 from control_plane_kit_core.control_routes import NODE_CONTROL_ROUTES, NODE_HEALTH_ROUTES
 from control_plane_kit_server_sdk._fastapi_health_routes import _build_health_routes
@@ -18,10 +17,11 @@ from control_plane_kit_server_sdk._fastapi_surface_routes import (
     _build_surface_routes,
 )
 from control_plane_kit_server_sdk._fastapi_variable_routes import (
-    _build_variable_registry,
     _build_variable_routes_from_registry,
 )
-from control_plane_kit_server_sdk._replay import _ProcessLocalNodeControlReplay
+from control_plane_kit_server_sdk._control_dispatch import (
+    _prepare_control_dispatch, _validate_control_configuration,
+)
 from control_plane_kit_server_sdk.verification import (
     Ed25519WorkloadNodeControlSurfaceReadVerifier,
     Ed25519WorkloadNodeControlVerifier,
@@ -95,31 +95,13 @@ def _prepare_installation(
         or type(app.router) is not APIRouter
         or type(app.router.routes) is not list
         or app.middleware_stack is not None
-        or type(target) is not NodeControlTarget
-        or type(declaration) is not WorkloadNodeControlSurfaceDeclaration
-        or type(variables) is not tuple
-        or type(surface_read_verifier)
-        is not Ed25519WorkloadNodeControlSurfaceReadVerifier
-        or target.provider_socket_name != declaration.surface.provider_socket_name
     ):
         raise ValueError
-
-    has_health = declaration.profile is WorkloadNodeControlSurfaceDeclarationProfile.V2
-    has_variables = not has_health or bool(declaration.surface.variables)
-    if has_health:
-        if (
-            type(health_dispatcher) is not WorkloadNodeHealthReadDispatcher
-            or health_dispatcher.target != target
-            or health_dispatcher.declaration != declaration
-        ):
-            raise ValueError
-    elif health_dispatcher is not None:
-        raise ValueError
-    if has_variables:
-        if type(command_verifier) is not Ed25519WorkloadNodeControlVerifier:
-            raise ValueError
-    elif command_verifier is not None or variables:
-        raise ValueError
+    has_variables, has_health = _validate_control_configuration(
+        target=target, declaration=declaration, variables=variables,
+        command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
+        health_dispatcher=health_dispatcher,
+    )
 
     prior_routes = app.router.routes
     if any(
@@ -130,23 +112,19 @@ def _prepare_installation(
     if any(not _route_is_disjoint(route) for route in prior_routes):
         raise _RouteCollision
 
-    registry = _build_variable_registry(
-        declaration=declaration,
-        variables=variables,
+    control = _prepare_control_dispatch(
+        target=target, declaration=declaration, variables=variables,
+        command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
+        health_dispatcher=health_dispatcher,
     )
-    surface_routes = _build_surface_routes(
-        target=target,
-        declaration=declaration,
-        registry=registry,
-        verifier=surface_read_verifier,
-    )
+    surface_routes = _build_surface_routes(control=control)
     variable_routes = ()
     if has_variables:
         variable_routes = _build_variable_routes_from_registry(
-            target=target, registry=registry, verifier=command_verifier,
-            replay=_ProcessLocalNodeControlReplay(),
+            target=control.target, registry=control.registry, verifier=control.command_verifier,
+            replay=control.replay,
         )
-    health_routes = _build_health_routes(dispatcher=health_dispatcher) if has_health else ()
+    health_routes = _build_health_routes(dispatcher=control.health_dispatcher) if has_health else ()
     routes = (*surface_routes, *variable_routes, *health_routes)
     if not _canonical_route_shape(routes, variables=has_variables, health=has_health):
         raise ValueError
