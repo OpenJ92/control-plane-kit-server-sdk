@@ -282,6 +282,59 @@ snapshot, and execution of the admitted read. It bounds route/body inputs and
 proves bodylessness before calling admission; successful admission precedes
 local declaration/registry access and result production.
 
+Standard-library HTTP products can use the same receiving configuration with
+only the `verification` extra. Install before binding a supported standard
+server; the product retains listener lifetime:
+
+```python
+from http.server import ThreadingHTTPServer
+from control_plane_kit_server_sdk.stdlib import install_cpk_control_routes
+
+server = ThreadingHTTPServer(
+    ("127.0.0.1", 8000), ApplicationHandler, bind_and_activate=False,
+)
+try:
+    install_cpk_control_routes(
+        server,
+        reserve_control_namespace=True,
+        target=target,
+        declaration=declaration,
+        surface_read_verifier=surface_read_verifier,
+        health_dispatcher=health,
+    )
+    server.server_bind()
+    server.server_activate()
+    server.serve_forever()
+finally:
+    server.server_close()
+```
+
+This health-only example reuses the configured dispatcher above. Legacy or
+mixed declarations also supply their variables and command verifier. Exact
+unbound `HTTPServer` and `ThreadingHTTPServer` with the standard parser,
+lifecycle and response hooks are supported; application `do_*` methods remain
+unchanged. Custom/TLS server adaptation belongs to the product. Configuration
+and descriptor preparation finish before one handler assignment. Installation
+does not bind, start a thread or invoke health callbacks.
+
+Reservation deliberately assigns `/__control` and descendants to the SDK,
+including terminal rejection of aliases and unknown control requests. It is
+not proof that arbitrary application handler bodies lack conflicting routes.
+Disjoint application traffic retains its original behavior. The private alias
+classifier has a 16-pass limit: unresolved deeply encoded targets reject
+without application fallback, even when their eventual destination might be
+non-control. Only canonical control requests using HTTP/1.0 or HTTP/1.1 are
+admitted. Control replies have bounded JSON framing, no-store and connection
+close; HEAD has no body. Adapter errors are nonsemantic `node-control` codes;
+successful health results are the exact correlated Core values.
+
+The product owns connection deadlines and bounded callbacks. An admitted
+callback can finish after disconnect; the SDK does not retry it or promise
+cancellation. If serving on another thread, call `shutdown()` from outside
+that serving thread, then close/join according to the product's worker policy.
+[Decision 0018](docs/decisions/0018-passive-stdlib-control-host.md) records the
+complete supported boundary and test evidence requirements.
+
 ## Validation
 
 Run the authoritative Docker-first package gate with:
