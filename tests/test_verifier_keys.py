@@ -404,6 +404,7 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
             if path.name in {
                 "_fastapi_variable_routes.py",
                 "_fastapi_surface_routes.py",
+                "_fastapi_health_routes.py",
                 "fastapi.py",
             }:
                 permitted.update({"fastapi", "starlette"})

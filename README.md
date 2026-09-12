@@ -53,7 +53,7 @@ install_cpk_control_routes(
 )
 ```
 
-The installer validates and constructs the complete four-route CPK surface
+For a legacy V1 declaration, the installer validates and constructs the complete four-route CPK surface
 before replacing the host route list once. The SDK root remains lazy and
 framework-neutral.
 
@@ -86,9 +86,46 @@ valid admission retains the same observation identity.
 SDK #22 deliberately adopts Core `95452249d0340707a5cdffe737e34669e9d53165`,
 including changed shared public-wire contracts as well as health declarations.
 [Decision 0015](docs/decisions/0015-signed-health-read-admission.md) records the
-admission boundary and credential limits. SDK #23 owns callback dispatch and
-health-only/mixed FastAPI installation; the installer above still installs the
-existing four routes and requires both existing verifiers.
+admission boundary and credential limits.
+
+For a V2 declaration, the optional health dispatcher binds the installed context
+to two named synchronous callbacks. Each declared callback returns only a Core
+`NodeHealthReadOutcome`; the SDK constructs the correlated result. Callback
+presence must exactly match the declaration, and callbacks are not invoked
+during configuration. For a health-only service:
+
+```python
+from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
+
+health = WorkloadNodeHealthReadDispatcher(
+    target=installed_target, runtime_id=installed_runtime,
+    declaration=installed_v2_declaration, verifier=verifier,
+    liveness=read_liveness, readiness=read_readiness,
+)
+install_cpk_control_routes(
+    app, target=installed_target, declaration=installed_v2_declaration,
+    surface_read_verifier=surface_read_verifier, health_dispatcher=health,
+)
+```
+
+Health-only installs authenticated capabilities/status and
+`GET /__control/health/{health_kind}` for liveness/readiness without command
+keys, variables or a replay ledger. A mixed declaration also requires the
+existing command verifier and may supply its live variable registry. The single
+installer validates everything before publishing routes once; legacy V1 still
+uses the existing four routes and both existing verifiers.
+
+Health requests require an exact raw GET path, empty query/body and one bounded
+Bearer credential. Admission and the selected callback run off the event loop.
+Callbacks own bounded dependency reads; a worker thread is not cancellation or
+timeout enforcement. Adapter-generated responses use `Cache-Control: no-store`.
+HTTP 200 carries any of the four semantic outcomes, so callers must inspect the
+outcome. Exceptions and invalid returns produce a fixed nonsemantic failure,
+never an invented healthy/unknown observation. There is no health result cache:
+the same valid request may read again with the same observation identity.
+See [decision 0016](docs/decisions/0016-health-dispatch-and-fastapi-composition.md).
+Standard-library hosts and product-owned checks remain separate follow-up work;
+existing product health endpoints are not retargeted or probed through loopback.
 
 Authenticated APPLY invokes the caller-supplied variable and can mutate
 process-local or durable workload-owned state. The SDK adapter owns no storage,

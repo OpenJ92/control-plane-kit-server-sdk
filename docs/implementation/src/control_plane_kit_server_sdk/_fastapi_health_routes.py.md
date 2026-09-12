@@ -1,0 +1,8 @@
+Source: [src/control_plane_kit_server_sdk/_fastapi_health_routes.py](../../../../src/control_plane_kit_server_sdk/_fastapi_health_routes.py).
+Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+This private builder consumes the already validated neutral dispatcher and creates the exact Core95452249 health GET template. It is composed only through the existing public installer. Raw method/path must identify exactly liveness/readiness; the query is empty, headers use shared bounded single-Bearer extraction, and streaming rejects the first nonempty body chunk. The adapter does not collect a body or trust forwarded locality. Header/path/query limits retain their existing ownership; elapsed stream time and empty-chunk count are not bounded here.
+
+One run_in_threadpool call performs signature/local-context admission, callback and Core result serialization. Successful semantic results use200 even for unhealthy/unknown/unsupported. All adapter-generated responses use no-store and fixed errors map framing/auth/unknown-kind/internal failures to400/413/401/404/500. Errors contain no callback diagnostics and no fabricated outcome. Router-owned redirects/HEAD/unmatched errors run no callback and remain ordinary host behavior.
+
+Workload admission denial proves zero protected callbacks, potentially after HTTP reached the workload. It does not prove gateway zero-network denial. No listener, polling, request forwarding, command replay or cache is added. Worker threads are not timeout/cancellation enforcement. The real signed ASGI tests distinguish these boundaries and preserve unrelated application responses.
