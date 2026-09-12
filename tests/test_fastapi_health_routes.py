@@ -72,6 +72,7 @@ class FastApiHealthRouteTests(unittest.TestCase):
     def test_health_only_and_mixed_installation_preserve_application_and_static_authority(self):
         for mixed in (False, True):
             with self.subTest(mixed=mixed):
+                prior_calls = tuple(self.calls)
                 declaration = self.fixture.declaration
                 variables = ()
                 arguments = {}
@@ -88,7 +89,7 @@ class FastApiHealthRouteTests(unittest.TestCase):
                 installed = app.router.routes[len(prior):]
                 self.assertEqual(len(installed), 5 if mixed else 3)
                 self.assertTrue(all(not route.include_in_schema for route in installed))
-                self.assertEqual(self.calls, [])
+                self.assertEqual(tuple(self.calls), prior_calls)
                 request = replace(self.fixture.request, declaration_identity=declaration.identity())
                 status, headers, body = asyncio.run(self.asgi(app, token=self.fixture.token(self.fixture.grant(request))))
                 self.assertEqual(status, 200)
