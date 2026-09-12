@@ -677,6 +677,8 @@ with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
                 "class Ed25519WorkloadNodeControlSurfaceReadVerifier:\n"
                 "    pass\n"
                 "class Ed25519WorkloadNodeControlVerifier:\n"
+                "    pass\n\n"
+                "class Ed25519WorkloadNodeHealthReadVerifier:\n"
                 "    pass\n",
                 encoding="utf-8",
             )

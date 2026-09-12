@@ -1,0 +1,5 @@
+Source: [test_support/tests/test_gate_contract.py](../../../../test_support/tests/test_gate_contract.py).
+Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+Existing source-shape and controlled probe fixtures protect ordinary test.sh phases, dependency modes, installed import/version behavior and PID-owned cleanup targets. The sole #22 change adds the nominal health verifier class to the fake optional-module fixture so it matches the installed-extra probe's new additive import requirement. No fixture claims real signature/HTTP admission. Other assertions are preserved. The authoritative full Docker gate, rather than these fake modules or textual checks alone, establishes installed dependency availability and cleanup evidence.
+

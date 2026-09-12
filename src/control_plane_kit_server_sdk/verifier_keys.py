@@ -135,6 +135,41 @@ class WorkloadNodeControlSurfaceReadVerifierKeySet:
         object.__setattr__(self, "public_keys", ordered)
 
 
+@dataclass(frozen=True, slots=True)
+class WorkloadNodeHealthReadVerifierKeySet:
+    """One complete supplied snapshot for the dedicated health-read purpose."""
+
+    purpose: DelegationKeyPurpose
+    public_keys: tuple[DelegationPublicKey, ...] = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.purpose) is not DelegationKeyPurpose
+            or self.purpose is not DelegationKeyPurpose.WORKLOAD_NODE_HEALTH_READ
+            or type(self.public_keys) is not tuple
+            or not 1 <= len(self.public_keys) <= _MAX_PUBLIC_KEYS
+        ):
+            raise ValueError("health-read verifier key set is invalid")
+        if any(
+            type(key) is not DelegationPublicKey
+            or not _has_exact_public_key_shape(key)
+            or type(key.key_id) is not str
+            or type(key.algorithm) is not DelegationKeyAlgorithm
+            or type(key.public_key_pem) is not str
+            or type(key.fingerprint_sha256) is not str
+            or not _is_canonical_public_key(key)
+            for key in self.public_keys
+        ):
+            raise ValueError("health-read verifier public key is invalid")
+        ordered = tuple(sorted(self.public_keys, key=lambda key: key.key_id))
+        if (
+            len({key.key_id for key in ordered}) != len(ordered)
+            or len({key.fingerprint_sha256 for key in ordered}) != len(ordered)
+        ):
+            raise ValueError("health-read verifier key identities must be unique")
+        object.__setattr__(self, "public_keys", ordered)
+
+
 def _has_exact_public_key_shape(key: DelegationPublicKey) -> bool:
     namespace = key.__dict__
     if type(namespace) is not dict:
@@ -232,9 +267,40 @@ class AtomicWorkloadNodeControlSurfaceReadVerifierKeySet:
             )
 
 
+class AtomicWorkloadNodeHealthReadVerifierKeySet:
+    """Publish complete process-local health-read key snapshots atomically."""
+
+    __slots__ = ("_lock", "_snapshot")
+
+    def __init__(self, initial: WorkloadNodeHealthReadVerifierKeySet) -> None:
+        self._require_key_set(initial)
+        self._lock = Lock()
+        self._snapshot = initial
+
+    def snapshot(self) -> WorkloadNodeHealthReadVerifierKeySet:
+        with self._lock:
+            snapshot = self._snapshot
+        return snapshot
+
+    def replace(
+        self, candidate: WorkloadNodeHealthReadVerifierKeySet,
+    ) -> WorkloadNodeHealthReadVerifierKeySet:
+        self._require_key_set(candidate)
+        with self._lock:
+            self._snapshot = candidate
+        return candidate
+
+    @staticmethod
+    def _require_key_set(candidate: object) -> None:
+        if type(candidate) is not WorkloadNodeHealthReadVerifierKeySet:
+            raise TypeError("atomic health-read verifier key set is invalid")
+
+
 __all__ = [
     "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
+    "AtomicWorkloadNodeHealthReadVerifierKeySet",
     "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
+    "WorkloadNodeHealthReadVerifierKeySet",
 ]

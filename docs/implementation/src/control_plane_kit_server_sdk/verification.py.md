@@ -1,0 +1,11 @@
+Source: [src/control_plane_kit_server_sdk/verification.py](../../../../src/control_plane_kit_server_sdk/verification.py).
+Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+The optional owner now admits three disjoint credential families: variable commands, static surface reads and semantic health reads. Base SDK imports stay free of PyJWT/FastAPI. Existing command and surface behavior remains unchanged; surface and health reuse the bounded compact-framing helper with their own ceilings.
+
+Health uses CPK-WORKLOAD-NODE-HEALTH-READ+JWT and the closed workload_node_health_read payload. One exact-purpose atomic snapshot selects one Ed25519 key. Duplicate-aware bounded JSON and canonical base64url inspection precede maintained PyJWT verification; authenticated outer/embedded/header claims must agree. One supplied safe-integer clock and Core's predicate compare half-open time and independently supplied target, runtime, V2 declaration and actual kind. candidate must be exactly None; transport bodylessness belongs to the later HTTP owner.
+
+The selected Core is 95452249d0340707a5cdffe737e34669e9d53165, including its shared public-wire and command/surface changes. Health reconstructs only the candidate from authenticated claims, never expected local authority. It returns ordinary Core NodeHealthReadRequest, adds no callback, replay store, provider effect, key custody or graph/attempt approval proof. Repeated admission preserves observation identity.
+
+Maximum canonical compact health material is 4178 bytes; admission bounds total4608 and segments512/3968/128 also permit bounded JSON whitespace. The shared walker retains depth16/member64 limits. Ordinary failures become fixed errors raised outside handlers without exception links; BaseException propagates. Reprs omit key/issuer/audience. SDK #23 owns callback and FastAPI composition. See decision0015 and the health admission tests; owning gate results belong in the PR, not inferred from this note.
+

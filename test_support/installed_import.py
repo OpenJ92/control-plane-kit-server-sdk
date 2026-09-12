@@ -12,10 +12,12 @@ if control_plane_kit_server_sdk.__all__ != [
     "AtomicControlPlaneVariable",
     "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
+    "AtomicWorkloadNodeHealthReadVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
     "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
+    "WorkloadNodeHealthReadVerifierKeySet",
     "__version__",
 ]:
     raise SystemExit("unexpected installed SDK exports")
@@ -39,6 +41,14 @@ if (
     != "control_plane_kit_server_sdk.context"
 ):
     raise SystemExit("unexpected installed SDK context owner")
+for name in (
+    "WorkloadNodeHealthReadVerifierKeySet",
+    "AtomicWorkloadNodeHealthReadVerifierKeySet",
+):
+    if getattr(control_plane_kit_server_sdk, name).__module__ != (
+        "control_plane_kit_server_sdk.verifier_keys"
+    ):
+        raise SystemExit("unexpected installed SDK health key-set owner")
 if (
     control_plane_kit_server_sdk.ControlPlaneVariable.__module__
     != "control_plane_kit_server_sdk.protocol"

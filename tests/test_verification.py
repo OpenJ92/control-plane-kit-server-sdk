@@ -582,8 +582,10 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
             [
                 "Ed25519WorkloadNodeControlSurfaceReadVerifier",
                 "Ed25519WorkloadNodeControlVerifier",
+                "Ed25519WorkloadNodeHealthReadVerifier",
                 "WorkloadNodeControlSurfaceReadVerificationError",
                 "WorkloadNodeControlVerificationError",
+                "WorkloadNodeHealthReadVerificationError",
             ],
         )
         self.assertEqual(module.Ed25519WorkloadNodeControlVerifier.__module__, VERIFICATION_MODULE)
@@ -1573,8 +1575,10 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             [
                 "Ed25519WorkloadNodeControlSurfaceReadVerifier",
                 "Ed25519WorkloadNodeControlVerifier",
+                "Ed25519WorkloadNodeHealthReadVerifier",
                 "WorkloadNodeControlSurfaceReadVerificationError",
                 "WorkloadNodeControlVerificationError",
+                "WorkloadNodeHealthReadVerificationError",
             ],
         )
         self.assertEqual(

@@ -16,7 +16,7 @@ PACKAGE_ROOT = SOURCE_ROOT / "control_plane_kit_server_sdk"
 CORE_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip"
+    "95452249d0340707a5cdffe737e34669e9d53165.zip"
     "#subdirectory=control-plane-kit-core"
 )
 VERIFICATION_DEPENDENCIES = [
@@ -83,10 +83,12 @@ assert sdk.__all__ == [
     "AtomicControlPlaneVariable",
     "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
+    "AtomicWorkloadNodeHealthReadVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
     "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
+    "WorkloadNodeHealthReadVerifierKeySet",
     "__version__",
 ]
 assert sdk.AtomicControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.atomic"
@@ -173,7 +175,7 @@ for name in (
             "pip install .",
             "control_plane_kit_server_sdk",
             "__version__",
-            "0ee72c3fcdfbee5094357152bdf070fbfc53393c",
+            "95452249d0340707a5cdffe737e34669e9d53165",
             "not published",
         ):
             with self.subTest(required=required):

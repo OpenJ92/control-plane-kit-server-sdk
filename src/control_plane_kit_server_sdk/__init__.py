@@ -6,8 +6,10 @@ from control_plane_kit_server_sdk.protocol import ControlPlaneVariable
 from control_plane_kit_server_sdk.verifier_keys import (
     AtomicWorkloadNodeControlSurfaceReadVerifierKeySet,
     AtomicWorkloadNodeControlVerifierKeySet,
+    AtomicWorkloadNodeHealthReadVerifierKeySet,
     WorkloadNodeControlSurfaceReadVerifierKeySet,
     WorkloadNodeControlVerifierKeySet,
+    WorkloadNodeHealthReadVerifierKeySet,
 )
 
 
@@ -17,9 +19,11 @@ __all__ = [
     "AtomicControlPlaneVariable",
     "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
+    "AtomicWorkloadNodeHealthReadVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
     "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
+    "WorkloadNodeHealthReadVerifierKeySet",
     "__version__",
 ]
