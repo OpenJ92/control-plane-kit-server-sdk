@@ -4,3 +4,5 @@ Maintain this document alongside its source file. When the source or relevant im
 Existing source-shape and controlled probe fixtures protect ordinary test.sh phases, dependency modes, installed import/version behavior and PID-owned cleanup targets. #22 added the nominal health verifier class to the fake optional-module fixture; #23 adds a nominal health dispatcher module for the probe's verification-only import check. No fixture claims real signature/callback/HTTP admission. Other assertions are preserved. The authoritative full Docker gate, rather than these fake modules or textual checks alone, establishes installed dependency availability and cleanup evidence.
 
 SDK #26 adds a nominal `_control_dispatch` fixture class for the strengthened installed import probe. It is fixture apparatus only and claims no real preparation or interpretation.
+
+SDK #27 adds a nominal stdlib installer function for the installed probe's module/import check. This fake fixture does not implement or validate sockets, listeners, framing or SDK dispatch; the ordinary package gate owns those real tests.

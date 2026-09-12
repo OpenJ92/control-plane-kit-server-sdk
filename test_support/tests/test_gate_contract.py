@@ -690,6 +690,10 @@ with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
                 "class _PreparedControlDispatch:\n    pass\n",
                 encoding="utf-8",
             )
+            (root / "control_plane_kit_server_sdk" / "stdlib.py").write_text(
+                "def install_cpk_control_routes():\n    pass\n",
+                encoding="utf-8",
+            )
             self._write_fake_module(
                 root,
                 "jwt",
