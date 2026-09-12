@@ -2,4 +2,3 @@ Source: [tests/test_package_foundation.py](../../../tests/test_package_foundatio
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
 The distribution/foundation suite retains exact metadata, dependency, package/export ownership and lazy import assertions. #22 updates the intentionally accepted Core95452249 coordinate and adds two neutral health key exports to the exact root inventory. Framework/crypto ownership laws and actual behavioral assertions are unchanged. Subprocess source imports are distinct from installed probes. Historical documentation-string and syntactic import checks are not crypto or runtime proofs.
-

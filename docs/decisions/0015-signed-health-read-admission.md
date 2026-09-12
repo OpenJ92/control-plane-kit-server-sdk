@@ -1,6 +1,7 @@
 # Decision 0015: Dedicated signed health-read admission
 
-Status: Implemented, pending owning validation and independent source review.
+Status: Implemented for SDK #22; owning validation and independent source review
+are recorded in [PR #24](https://github.com/OpenJ92/control-plane-kit-server-sdk/pull/24).
 
 Issue #22 is the admission child of SDK #20. Its accepted design separates
 credentials from callback/HTTP effects in #23. Core is deliberately selected at
@@ -61,3 +62,11 @@ from additive export inventories and the intentional dependency coordinate.
 Validation uses only ordinary Docker-backed `./test.sh`; no mandatory failing
 suite ceremony or alternate harness. Source, installed-package, composition,
 image and live evidence remain distinct.
+
+At source/test head `ec3f2b6fa0a7d188e73c963af4ae97f721987e0f`, the ordinary
+pinned gate passed all24 policy and166 package tests, compile and all three
+installed-package probe phases. Hosted CI and Meridian's independent source/
+test-integrity review passed on that same head. The initial4eaaf397 gate had one
+new duplicate-JSON fixture construction error, corrected without production or
+legacy-law changes; its failure remains recorded on the PR without behavioral-red
+credit. These are SDK package/installed proofs, not callback, HTTP or live proofs.
