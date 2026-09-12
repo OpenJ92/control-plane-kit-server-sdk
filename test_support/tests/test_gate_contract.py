@@ -682,6 +682,10 @@ with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
                 "    pass\n",
                 encoding="utf-8",
             )
+            (root / "control_plane_kit_server_sdk" / "health.py").write_text(
+                "class WorkloadNodeHealthReadDispatcher:\n    pass\n",
+                encoding="utf-8",
+            )
             self._write_fake_module(
                 root,
                 "jwt",
