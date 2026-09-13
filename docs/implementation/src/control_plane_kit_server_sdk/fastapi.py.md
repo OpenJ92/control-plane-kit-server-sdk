@@ -1,20 +1,15 @@
 Source: [src/control_plane_kit_server_sdk/fastapi.py](../../../../src/control_plane_kit_server_sdk/fastapi.py).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-The optional public installer composes exactly four Core node-control routes:
-capabilities, status, variable READ and variable APPLY. It requires exact FastAPI,
-router, target, declaration and verifier types and a tuple of live variables,
-before the app has built its middleware stack. The package root stays neutral;
-importing this optional module brings framework and verification dependencies.
+The optional public installer remains the one atomic publication boundary. It validates exact app/router/target/declaration/verifier types and startup timing, then classifies V1 or V2 composition. V1 preserves the four existing routes and required command/static verifiers. Health-only V2 requires static authority plus an exact health dispatcher, rejects command verifier/nonempty variables, and constructs no command replay. Mixed V2 retains existing variable behavior/replay plus health. V2 dispatcher target/declaration must equal the install context.
 
-Preparation checks existing routes before taking the variable descriptor snapshot,
-constructs one private registry and replay coordinator, builds both route families,
-compares their ordered names/methods/paths to consumer Core 0ee72c3 NODE_CONTROL_ROUTES,
-and marks the new routes privately. Only successful preparation replaces the host
-route list once, preserving prior route object identities. No app-state flag or
-global installation registry is used. This is serialized startup composition,
-not a lock/transaction against concurrent host route edits; trusted descriptor
-callbacks remain caller-owned code.
+Configuration and closed collision checks precede variable descriptor callbacks. Registry snapshots, optional route-family construction, exact ordered Core route shape and private marking complete off-app before the sole route-list replacement. Existing route object identities, partial variable-registry laws, startup constraints, marks and collision classifier are preserved. This is serialized startup composition, not a transaction against arbitrary concurrent host edits.
+
+Static routes remain separately authenticated registry/declaration projections, not health. The private health adapter performs framing and uses the neutral dispatcher off-loop. No second FastAPI installer, global registry, actual listener or ordinary-routing rewrite is added. Core remains95452249; exact direct framework versions are unchanged. Completed SDK21 adds the separate passive [stdlib installer](stdlib.py.md), reusing shared interpretation. Tests cover the additive signature and concrete legacy/health-only/mixed behavior; companion integration retains this source truth.
+
+SDK #26 extracts pure configuration validation and preparation to `_control_dispatch`. Host checks/collisions precede descriptor preparation; static routes capture that value, variable routes consume its exact registry/replay, and health uses its retained dispatcher. Public signature, shape, errors and publication are unchanged.
+
+## Behavior and evidence details
 
 The collision classifier accepts only exact known FastAPI/Starlette HTTP,
 WebSocket and Mount types with a disjoint literal first segment. A root ordinary

@@ -1,6 +1,10 @@
 Source: [tests/test_verifier_keys.py](../../../tests/test_verifier_keys.py).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
+The existing command/static key configuration tests retain exact type/purpose, bounds, public identity, atomic replacement, concurrency and redaction assertions. SDK23 only names the new private FastAPI health adapter in the existing narrow allowed framework-import-owner set. No public-key admission assertion or dependency-boundary prohibition is removed. The health dispatcher imports no framework; its optional import boundary is also exercised by the installed verification-extra probe. Source import inventories are not complete transitive or runtime security proofs.
+
+## Behavior and evidence details
+
 These tests exercise deterministic A, A+B and B snapshots, exact purpose/type
 admission, canonical nested public material, independent ID/fingerprint
 uniqueness and routine representation hiding. Variable-command and surface-read

@@ -1,5 +1,9 @@
-Source: [test_dependency_preflight.py](../../../../test_support/tests/test_dependency_preflight.py).
+Source: [test_support/tests/test_dependency_preflight.py](../../../../test_support/tests/test_dependency_preflight.py).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+The existing metadata-mutation tests now construct the deliberately accepted Core95452249 dependency. All prior rejection cases remain: mutable/wrong SHA or repository, subdirectory/extra/version/spelling/order drift. A controlled fake-Docker fixture proves the real guard runs before simulated build/install; this is gate-order evidence, not a replacement runtime harness. The owning Docker-backed test.sh executes these policy self-tests before package build. The update does not widen accepted coordinates or relax failure assertions.
+
+## Behavior and evidence details
 
 The suite constructs metadata around the selected Core archive and both exact
 extras, then runs the real [preflight CLI](../dependency_preflight.py.md) in a
@@ -14,9 +18,3 @@ preflight for matching calls and records simulated build/install events, while
 other Docker calls return success. The assertions require dependency drift to
 stop the shell before those simulated events. This proves controlled gate
 ordering, not real Docker isolation, package installation or registry behavior.
-
-The complete test owner was read, including the mutation matrix and shim.
-Temporary fixture files and subprocesses belong to the test environment; no
-provider credentials or live resources are part of this evidence. These tests
-do not exhaust every malformed TOML/filesystem failure or authenticate the
-remote artifact selected by a matching URL. No tests were executed for the note.

@@ -19,7 +19,7 @@ mechanism.
 Terminal results are exact APPLY success/rejection/failure values, normalized
 through the selected Core result codec into compact UTF-8 JSON capped at 16 KiB.
 Each return decodes a fresh copy and checks the request ID. The input request
-digest and those bounds come from the consumer's Core 0ee72c3 contracts, not
+digest and those bounds come from the consumer's Core 95452249 contracts, not
 latest upstream. No callback-owned object is retained as the replay result.
 
 Ordinary dispatch/normalization failure publishes a request-keyed NodeControlFailed.

@@ -621,12 +621,14 @@ class FastApiControlRouteTests(unittest.TestCase):
                 "variables",
                 "command_verifier",
                 "surface_read_verifier",
+                "health_dispatcher",
             ),
         )
         self.assertEqual(
             tuple(parameter.kind for parameter in signature.parameters.values()),
             (
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
@@ -641,9 +643,12 @@ class FastApiControlRouteTests(unittest.TestCase):
                 "target": NodeControlTarget,
                 "declaration": WorkloadNodeControlSurfaceDeclaration,
                 "variables": tuple[object, ...],
-                "command_verifier": Ed25519WorkloadNodeControlVerifier,
+                "command_verifier": Ed25519WorkloadNodeControlVerifier | None,
                 "surface_read_verifier": (
                     Ed25519WorkloadNodeControlSurfaceReadVerifier
+                ),
+                "health_dispatcher": (
+                    importlib.import_module("control_plane_kit_server_sdk.health").WorkloadNodeHealthReadDispatcher | None
                 ),
                 "return": type(None),
             },

@@ -1,8 +1,7 @@
 Source: [src/control_plane_kit_server_sdk/_fastapi_variable_routes.py](../../../../src/control_plane_kit_server_sdk/_fastapi_variable_routes.py).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-This private adapter owns registry construction, shared request framing and the
-variable READ/APPLY routes. Registry construction snapshots each live variable's
+This private adapter owns ASGI stream/response handling and variable READ/APPLY routes. Registry construction, byte framing and synchronous interpretation now live in the shared neutral owners. Registry construction snapshots each live variable's
 descriptor once, requires exact equality with its declaration entry and callable
 read/apply methods, rejects duplicates, and installs one Core result codec per
 entry. Empty or declared subsets are valid. The captured dictionary is private
@@ -26,7 +25,8 @@ the application-local [replay coordinator](_replay.py.md). READ has no replay.
 Workload apply may mutate caller-owned durable state; this adapter does not own
 that transaction or undo effects after a failed result.
 
-Result normalization uses consumer Core 0ee72c3's codec, exact operation result
+Result normalization in [_control_dispatch.py](_control_dispatch.py.md) uses
+consumer Core 95452249's codec, exact operation result
 types, matching request ID/operation and compact ASCII JSON capped at 16 KiB.
 Valid Core rejection/failure remains an HTTP 200 nominal result. Transport,
 credential, locality, lookup, replay conflict/capacity and ordinary internal
@@ -35,7 +35,9 @@ process-control BaseExceptions are not universally sanitized for arbitrary
 direct callers; HTTP responses omit their details.
 
 Both routes are excluded from OpenAPI. Their private builders are not an
-alternative public installer: [fastapi.py](fastapi.py.md) composes all four
-routes and enforces host collision/startup constraints. No provider client,
+alternative public installer: [fastapi.py](fastapi.py.md) composes legacy four,
+health-only three or mixed five routes and enforces host collision/startup constraints. No provider client,
 graph authority, credential issuance or SDK persistence is added. See
 [variable-route tests](../../tests/test_fastapi_variable_routes.py.md).
+
+SDK #26 moves registry/result/interpretation to `_control_dispatch` and byte helpers to `_http_framing`; this adapter imports their one implementation. Streaming and the one off-loop handoff stay here. Existing private builders remain adapter composition, not public alternative installers.

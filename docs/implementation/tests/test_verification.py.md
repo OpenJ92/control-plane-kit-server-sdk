@@ -1,7 +1,11 @@
 Source: [tests/test_verification.py](../../../tests/test_verification.py).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-This unittest owner covers the two optional signed verifiers using generated
+The existing real generated-key command/static verification tests remain governing legacy compatibility evidence across Core adoption. #22 only adds the health verifier/error names to the two exact optional-module export inventories. No signature, framing, snapshot, clock, denial, candidate, local-context or error assertion is weakened. Helpers are referenced by the new health test module without inheriting/recollecting these TestCases. Core exhaustive policy matrices remain Core-owned.
+
+## Behavior and evidence details
+
+This unittest owner covers the two legacy optional signed verifiers using generated
 test Ed25519 keys, actual PyJWT admission and exact pinned Core requests/grants.
 Raw JSON and compact-token helpers construct malformed, duplicated or
 noncanonical inputs. Injected library/codec/clock calls make rejection ordering
@@ -22,12 +26,3 @@ is installed by the verifier. Controlled thread/Event cases replace the key
 holder while PyJWT is blocked and require one in-flight call to retain its
 original complete snapshot. This is a selected concurrency schedule, not durable
 rotation, process restart or a distributed replay proof.
-
-The test inventory also contains dependency/root-laziness and documentation
-assertions. Those structural checks are distinct from cryptographic tests and
-from the installed-package gate. This companion used selected substantive
-assertions from the large file, with the full
-[verification owner](../src/control_plane_kit_server_sdk/verification.py.md)
-and selected Core 0ee72c3 codecs/comparison laws checked; it is not a full audit
-of every fixture permutation or transitive cryptographic implementation.
-Executable validation belongs to the repository's Docker-backed test.sh.

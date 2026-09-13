@@ -16,7 +16,7 @@ python -m pip install .
 
 It is not published to a package index. The base dependency is the immutable
 `control-plane-kit-core` source at
-`0ee72c3fcdfbee5094357152bdf070fbfc53393c`; installing from a clean checkout
+`95452249d0340707a5cdffe737e34669e9d53165`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
 Signature-verification dependencies are isolated in one exact optional extra:
@@ -53,9 +53,80 @@ install_cpk_control_routes(
 )
 ```
 
-The installer validates and constructs the complete four-route CPK surface
+For a legacy V1 declaration, the installer validates and constructs the complete four-route CPK surface
 before replacing the host route list once. The SDK root remains lazy and
 framework-neutral.
+
+Dedicated semantic-health credential admission is available separately in the
+verification extra:
+
+```python
+from control_plane_kit_server_sdk.verification import Ed25519WorkloadNodeHealthReadVerifier
+
+verifier = Ed25519WorkloadNodeHealthReadVerifier(
+    health_key_holder, expected_issuer=issuer, expected_audience=audience, clock=clock,
+)
+health_request = verifier.admit(
+    credential, route_kind=kind, candidate=None,
+    expected_target=installed_target, expected_runtime_id=installed_runtime,
+    expected_declaration=installed_v2_declaration,
+)
+```
+
+The holder is an `AtomicWorkloadNodeHealthReadVerifierKeySet` containing an exact
+`WorkloadNodeHealthReadVerifierKeySet` for `WORKLOAD_NODE_HEALTH_READ`. It holds
+public verification material only. Trusted startup composition supplies the
+local target, runtime, declaration, issuer, audience, clock and key state;
+incoming credentials or forwarded fields must not supply the expected context.
+Admission checks a dedicated signed profile against those independent values
+and returns ordinary Core `NodeHealthReadRequest` data. It has no callback,
+network, replay cache, graph-admission proof or credential custody. Repeated
+valid admission retains the same observation identity.
+
+SDK #22 deliberately adopts Core `95452249d0340707a5cdffe737e34669e9d53165`,
+including changed shared public-wire contracts as well as health declarations.
+[Decision 0015](docs/decisions/0015-signed-health-read-admission.md) records the
+admission boundary and credential limits.
+
+For a V2 declaration, the optional health dispatcher binds the installed context
+to two named synchronous callbacks. Each declared callback returns only a Core
+`NodeHealthReadOutcome`; the SDK constructs the correlated result. Callback
+presence must exactly match the declaration, and callbacks are not invoked
+during configuration. For a health-only service:
+
+```python
+from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
+
+health = WorkloadNodeHealthReadDispatcher(
+    target=installed_target, runtime_id=installed_runtime,
+    declaration=installed_v2_declaration, verifier=verifier,
+    liveness=read_liveness, readiness=read_readiness,
+)
+install_cpk_control_routes(
+    app, target=installed_target, declaration=installed_v2_declaration,
+    surface_read_verifier=surface_read_verifier, health_dispatcher=health,
+)
+```
+
+Health-only installs authenticated capabilities/status and
+`GET /__control/health/{health_kind}` for liveness/readiness without command
+keys, variables or a replay ledger. A mixed declaration also requires the
+existing command verifier and may supply its live variable registry. The single
+installer validates everything before publishing routes once; legacy V1 still
+uses the existing four routes and both existing verifiers.
+
+Health requests require an exact raw GET path, empty query/body and one bounded
+Bearer credential. Admission and the selected callback run off the event loop.
+Callbacks own bounded dependency reads; a worker thread is not cancellation or
+timeout enforcement. Adapter-generated responses use `Cache-Control: no-store`.
+HTTP 200 carries any of the four semantic outcomes, so callers must inspect the
+outcome. Exceptions and invalid returns produce a fixed nonsemantic failure,
+never an invented healthy/unknown observation. There is no health result cache:
+the same valid request may read again with the same observation identity.
+See [decision 0016](docs/decisions/0016-health-dispatch-and-fastapi-composition.md).
+Standard-library hosts and product-owned checks remain separate follow-up work;
+existing product health endpoints are not retargeted or probed through loopback.
+
 Authenticated APPLY invokes the caller-supplied variable and can mutate
 process-local or durable workload-owned state. The SDK adapter owns no storage,
 transaction, graph authority, or provider client; #1506 replay remains its
@@ -210,6 +281,59 @@ store. The #1507 FastAPI adapter owns HTTP extraction, the installed-variable
 snapshot, and execution of the admitted read. It bounds route/body inputs and
 proves bodylessness before calling admission; successful admission precedes
 local declaration/registry access and result production.
+
+Standard-library HTTP products can use the same receiving configuration with
+only the `verification` extra. Install before binding a supported standard
+server; the product retains listener lifetime:
+
+```python
+from http.server import ThreadingHTTPServer
+from control_plane_kit_server_sdk.stdlib import install_cpk_control_routes
+
+server = ThreadingHTTPServer(
+    ("127.0.0.1", 8000), ApplicationHandler, bind_and_activate=False,
+)
+try:
+    install_cpk_control_routes(
+        server,
+        reserve_control_namespace=True,
+        target=target,
+        declaration=declaration,
+        surface_read_verifier=surface_read_verifier,
+        health_dispatcher=health,
+    )
+    server.server_bind()
+    server.server_activate()
+    server.serve_forever()
+finally:
+    server.server_close()
+```
+
+This health-only example reuses the configured dispatcher above. Legacy or
+mixed declarations also supply their variables and command verifier. Exact
+unbound `HTTPServer` and `ThreadingHTTPServer` with the standard parser,
+lifecycle and response hooks are supported; application `do_*` methods remain
+unchanged. Custom/TLS server adaptation belongs to the product. Configuration
+and descriptor preparation finish before one handler assignment. Installation
+does not bind, start a thread or invoke health callbacks.
+
+Reservation deliberately assigns `/__control` and descendants to the SDK,
+including terminal rejection of aliases and unknown control requests. It is
+not proof that arbitrary application handler bodies lack conflicting routes.
+Disjoint application traffic retains its original behavior. The private alias
+classifier has a 16-pass limit: unresolved deeply encoded targets reject
+without application fallback, even when their eventual destination might be
+non-control. Only canonical control requests using HTTP/1.0 or HTTP/1.1 are
+admitted. Control replies have bounded JSON framing, no-store and connection
+close; HEAD has no body. Adapter errors are nonsemantic `node-control` codes;
+successful health results are the exact correlated Core values.
+
+The product owns connection deadlines and bounded callbacks. An admitted
+callback can finish after disconnect; the SDK does not retry it or promise
+cancellation. If serving on another thread, call `shutdown()` from outside
+that serving thread, then close/join according to the product's worker policy.
+[Decision 0018](docs/decisions/0018-passive-stdlib-control-host.md) records the
+complete supported boundary and test evidence requirements.
 
 ## Validation
 

@@ -3,7 +3,7 @@ Maintain this document alongside its source file. When the source or relevant im
 
 This unittest owner exercises the private READ/APPLY route builder using real
 local FastAPI/ASGI dispatch, generated signed credentials and recording workload
-variables. The fixtures intentionally bypass the public installer's four-route
+variables. The fixtures intentionally bypass the public installer's legacy four-route
 collision/startup composition, which has its own test owner.
 
 Registry cases allow an empty or declared subset, snapshot descriptors once and
@@ -24,7 +24,13 @@ from the event-loop thread; AST checks separately protect the intended handoff.
 Selected results and exceptions must produce the closed protocol/status behavior
 without fixture secret/target text. Ordinary routes remain usable. These tests
 do not prove provider authorization, distributed replay, durable transactions,
-network TLS or all possible thread schedules. Navigation used selected test
+network TLS or all possible thread schedules. Original navigation used selected test
 assertions and the full [adapter](../src/control_plane_kit_server_sdk/_fastapi_variable_routes.py.md),
-with the actual Core 0ee72c3 codec and prior verifier/replay context; not every
-fixture permutation was audited. Docker-backed test.sh owns execution.
+with the then-selected Core 0ee72c3 codec and prior verifier/replay context;
+that review is historical, not every fixture permutation was audited. Current
+Core 95452249 adoption and owner extraction retain the behavioral suite.
+Docker-backed test.sh owns execution.
+
+SDK #26 moves registry/result/interpretation to `_control_dispatch` and byte helpers
+to `_http_framing`. The codec-construction source assertion follows its new owner;
+request streaming and off-loop dispatch remain in the adapter, not this test file.

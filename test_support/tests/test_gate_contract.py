@@ -677,7 +677,21 @@ with Path(os.environ["CPK_VERIFICATION_PROBE_EVENTS"]).open("a") as stream:
                 "class Ed25519WorkloadNodeControlSurfaceReadVerifier:\n"
                 "    pass\n"
                 "class Ed25519WorkloadNodeControlVerifier:\n"
+                "    pass\n\n"
+                "class Ed25519WorkloadNodeHealthReadVerifier:\n"
                 "    pass\n",
+                encoding="utf-8",
+            )
+            (root / "control_plane_kit_server_sdk" / "health.py").write_text(
+                "class WorkloadNodeHealthReadDispatcher:\n    pass\n",
+                encoding="utf-8",
+            )
+            (root / "control_plane_kit_server_sdk" / "_control_dispatch.py").write_text(
+                "class _PreparedControlDispatch:\n    pass\n",
+                encoding="utf-8",
+            )
+            (root / "control_plane_kit_server_sdk" / "stdlib.py").write_text(
+                "def install_cpk_control_routes():\n    pass\n",
                 encoding="utf-8",
             )
             self._write_fake_module(

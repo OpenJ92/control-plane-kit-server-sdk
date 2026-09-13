@@ -1,0 +1,8 @@
+Source: [tests/test_fastapi_health_routes.py](../../../tests/test_fastapi_health_routes.py).
+Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+Six ASGI tests use the one public installer, actual signed health/static/command credentials and Core result codecs. A health-only/mixed table preserves ordinary routes, exact static results/authority, absent health-only variable routes and mixed command replay. Each subcase captures an immutable callback snapshot before dispatcher construction/installation and asserts it unchanged afterward, retaining valid prior HTTP calls without hiding an installation callback. Configuration, context mismatch and collisions fail before route-list publication; repeat installation remains marked.
+
+Denied signatures/locality/time/purpose, duplicate/missing/large headers, body/query/raw-path aliases and unknown kinds have callback counters zero. Router HEAD/redirect responses are distinguished from adapter-generated no-store results. Both health kinds and all four outcomes produce exact correlated Core bytes; repeated same requests invoke again without new identity. Invalid returns/ordinary exceptions are fixed500 and per-app target/callback state remains separate. A bounded Event schedule shows actual admission and callback on the worker thread while the event loop progresses.
+
+The helper sends in-process ASGI messages only and records headers/body. There is no listener, external network, provider or alternate runtime harness. Source tests do not prove live gateway routing, product health meaning or thread cancellation guarantees.

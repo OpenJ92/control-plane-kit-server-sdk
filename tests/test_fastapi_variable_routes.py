@@ -1203,7 +1203,7 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         )
 
     def test_source_constructs_result_codec_only_during_registry_snapshot(self) -> None:
-        module = self._module()
+        module = importlib.import_module("control_plane_kit_server_sdk._control_dispatch")
         source = Path(module.__file__).read_text(encoding="utf-8")
         tree = ast.parse(source, filename=module.__file__)
         codec_calls: list[tuple[str, int]] = []

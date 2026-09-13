@@ -22,8 +22,9 @@ credential, prove all possible thread schedules, persist a ledger, restart a
 process or roll back callback-owned data. Source/documentation assertions are
 separate structural checks, not runtime evidence.
 
-This companion used the full [367-line owner](../src/control_plane_kit_server_sdk/_replay.py.md),
-selected substantive test cases and the actual Core 0ee72c3 result codec and
-payload/lifetime constants. It is not a full audit of every test helper or
+The original companion reviewed the full [replay owner](../src/control_plane_kit_server_sdk/_replay.py.md),
+selected substantive test cases and then-selected Core 0ee72c3 result codec and
+payload/lifetime constants. Current Core 95452249 adoption retained these tests;
+the original review is not a fresh audit of every test helper or
 transitive dependency. The repository's Docker-backed test.sh owns executable
 validation; no new test run accompanies this documentation.

@@ -1,5 +1,26 @@
 # Initial SDK companion coverage
 
+## Current integration, separate from the historical review below
+
+This PR refresh targets develop `2b10d5a354ba4da9407d336703aacb96910100d4`
+and its Core `95452249d0340707a5cdffe737e34669e9d53165` dependency.
+Of the original 36 source companions, 19 were still absent on develop and
+17 overlapped later source-owned updates. Integration retains the missing
+companions, reconciles the overlapping explanations against current ownership,
+and preserves all 11 newer companions from the health/shared-dispatch/stdlib
+slices: 47 source companions in the resulting snapshot, plus this inventory
+and the navigation guide. These counts are integration accounting, not a
+permanent freshness ledger or a new full source audit.
+
+Original source files for the 19 missing companions are unchanged at this
+coordinate; imported-contract references still require current-pin review.
+The original review below remains historical evidence. Changed contracts and
+ownership were reviewed in SDK #22/#23/#26/#27; this documentation refresh
+does not rerun or replace their package evidence. North and Kepler review the
+refresh independently before merge.
+
+## Original rollout at the named baseline
+
 Source: develop 7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79, [issue #18](https://github.com/OpenJ92/control-plane-kit-server-sdk/issues/18).
 55 original tracked paths: 0 authored awaiting review, 36 reviewed, 0 pending, 19 excluded.
 Source owners and selected imported Core contracts were read directly; test
