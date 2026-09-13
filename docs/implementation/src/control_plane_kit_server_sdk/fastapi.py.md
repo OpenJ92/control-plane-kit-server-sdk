@@ -20,10 +20,13 @@ ownership proof. Any retained marked route prevents another install. Removing
 all marked routes permits a fresh install only if the other preconditions and
 collision checks still pass; it also creates fresh process-local replay state.
 
-Routes are excluded from OpenAPI, not made unreachable. Runtime authentication,
-trusted target binding and workload interpretation live in the
-[variable](_fastapi_variable_routes.py.md) and
-[surface](_fastapi_surface_routes.py.md) owners. The installer adds no listener,
+Routes are excluded from OpenAPI, not made unreachable. Signed admission lives
+in [verification](verification.py.md); synchronous interpretation and trusted
+target binding use [shared dispatch](_control_dispatch.py.md), with
+[health dispatch](health.py.md) owning health admission and callback dispatch.
+The [variable](_fastapi_variable_routes.py.md) and
+[surface](_fastapi_surface_routes.py.md) adapters own HTTP framing, off-loop
+execution and response mapping. The installer adds no listener,
 TLS, persistence, provider client or workload transaction. Ordinary preparation
 failures become one of three fixed cause-free messages; BaseExceptions and
 external caller effects are not a rollback guarantee. See
