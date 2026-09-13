@@ -8,6 +8,19 @@ without another checkout. Local SDK rules may tighten it; they may not weaken
 authorization, Docker-only validation, truthful uncertainty, test ownership,
 GitHub-memory, or redaction requirements.
 
+## Implementation companions
+
+Read `docs/implementation/<repository-relative-source-path>.md` before changing
+covered code. Verify its source and relevant imports at the dependency version
+this consumer actually selects. Follow `docs/implementation/README.md`.
+Create, update, move and remove companions alongside their covered files in the
+same change. Every companion starts with its source link and update reminder.
+Contract or dependency changes require an affected-consumer source search and
+handoff. Before review, check the actual PR diff and record updated companions
+or reviewed/no semantic change in the existing decision log. Review consequential
+claims against source. Initial pending coverage does not block unrelated work;
+bring touched files current. Do not add a freshness ledger or new CI framework.
+
 ## Shared Product Boundary
 
 CPK is a human-authorized, AI-assisted infrastructure control plane. Providers

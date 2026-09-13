@@ -6,3 +6,19 @@ The installed-extra probe first imports the neutral root and checks no eager cry
 SDK #26 additionally imports `_PreparedControlDispatch` from its defining shared module and checks framework isolation after that transitive framing/health import. It remains an installed optional-dependency probe, not dispatch execution.
 
 SDK #27 imports the public stdlib installer and verifies its defining module before the same framework-isolation check. Importing it must not bind a socket, start a listener or require FastAPI/Starlette/AnyIO; actual passive/listener behavior belongs to the owning stdlib tests.
+
+## Behavior and evidence details
+
+Ordinary exceptions in the import and metadata stages produce the fixed rejection
+line and return 2. Explicit version/ownership mismatches use the same path.
+Process-control BaseExceptions are outside those catches, and imported code's
+own output/effects are not captured by this script. The probe does not hash
+packages, inspect transitive versions, prove publisher identity or install
+anything itself.
+
+The [gate](../test.sh.md) supplies the separately installed verification extra.
+[Gate-contract tests](tests/test_gate_contract.py.md) use resolver-free fake
+modules/distribution metadata to check exact acceptance, early version rejection,
+import order and bounded probe-emitted errors. Real dependency availability
+requires the actual installed-extra phase; verifier behavior belongs to
+[verification tests](../tests/test_verification.py.md).
