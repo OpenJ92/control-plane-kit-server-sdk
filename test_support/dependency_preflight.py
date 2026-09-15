@@ -6,7 +6,7 @@ import sys
 import tomllib
 
 
-ACCEPTED_CORE_SHA = "95452249d0340707a5cdffe737e34669e9d53165"
+ACCEPTED_CORE_SHA = "b79a02d1ac8ef987dd34abeb2297a231b109f7a6"
 ACCEPTED_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"

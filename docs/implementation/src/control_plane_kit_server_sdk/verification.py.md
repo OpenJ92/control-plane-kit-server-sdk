@@ -5,7 +5,7 @@ The optional owner now admits three disjoint credential families: variable comma
 
 Health uses CPK-WORKLOAD-NODE-HEALTH-READ+JWT and the closed workload_node_health_read payload. One exact-purpose atomic snapshot selects one Ed25519 key. Duplicate-aware bounded JSON and canonical base64url inspection precede maintained PyJWT verification; authenticated outer/embedded/header claims must agree. One supplied safe-integer clock and Core's predicate compare half-open time and independently supplied target, runtime, V2 declaration and actual kind. candidate must be exactly None; transport bodylessness belongs to the FastAPI or stdlib adapter.
 
-The selected Core is 95452249d0340707a5cdffe737e34669e9d53165, including its shared public-wire and command/surface changes. Health reconstructs only the candidate from authenticated claims, never expected local authority. It returns ordinary Core NodeHealthReadRequest, adds no callback, replay store, provider effect, key custody or graph/attempt approval proof. Repeated admission preserves observation identity.
+The selected Core is b79a02d1ac8ef987dd34abeb2297a231b109f7a6, whose control, health and key definitions are unchanged from the previously adopted 95452249 contract. Health reconstructs only the candidate from authenticated claims, never expected local authority. It returns ordinary Core NodeHealthReadRequest, adds no callback, replay store, provider effect, key custody or graph/attempt approval proof. Repeated admission preserves observation identity.
 
 Maximum canonical compact health material is 4178 bytes; admission bounds total4608 and segments512/3968/128 also permit bounded JSON whitespace. The shared walker retains depth16/member64 limits. Ordinary failures become fixed errors raised outside handlers without exception links; BaseException propagates. Reprs omit key/issuer/audience. SDK #23 owns callback and FastAPI composition. See decision0015 and the health admission tests; owning gate results belong in the PR, not inferred from this note.
 
@@ -21,7 +21,7 @@ Maintained PyJWT then verifies EdDSA signature, issuer and strict audience.
 Library time checks are disabled in favor of the supplied clock and Core laws.
 
 Authenticated claims are checked again, decoded through the consumer-selected
-Core 95452249 codecs and compared with the protected-header key ID and outer
+Core b79a02d1 codecs and compared with the protected-header key ID and outer
 issuer/audience/time/JTI fields. One exact nonnegative safe integer clock sample
 governs the half-open interval: not_before <= now < expires_at. Command admission
 checks route operation/variable before reconstructing READ or decoding APPLY's

@@ -14,7 +14,7 @@ target/declaration comparison and result construction. Failed admission is 401;
 a valid credential for another target/declaration is 403 before disclosure.
 Other interpretation failures return a fixed 500 body.
 
-The pinned Core95452249 NodeControlSurfaceReadResultCodec binds request and
+The pinned Core b79a02d1 NodeControlSurfaceReadResultCodec binds request and
 declaration and creates canonical capabilities/status values with Core-owned
 aggregate bounds. This adapter returns those canonical bytes rather than
 inventing an application status schema. Repeated valid reads are stateless;

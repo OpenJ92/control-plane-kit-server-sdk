@@ -19,8 +19,8 @@ context is not an authority token. [The package gate](test.sh.md) and its suppor
 companions distinguish source checks, installed-package evidence and live
 runtime acceptance.
 
-Current integration source: develop `2b10d5a354ba4da9407d336703aacb96910100d4`.
-The metadata selects Core `95452249d0340707a5cdffe737e34669e9d53165`.
+SDK #30 starts from accepted develop `e822df4ddd4093f6129c65c8fc0707841a84dc51`.
+The metadata selects Core `b79a02d1ac8ef987dd34abeb2297a231b109f7a6`.
 The original rollout reviewed `7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79`
 with Core `0ee72c3fcdfbee5094357152bdf070fbfc53393c`; that is historical
 review provenance, not the current dependency. Selected direct dependencies
