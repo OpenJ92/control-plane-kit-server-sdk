@@ -16,7 +16,7 @@ python -m pip install .
 
 It is not published to a package index. The base dependency is the immutable
 `control-plane-kit-core` source at
-`95452249d0340707a5cdffe737e34669e9d53165`; installing from a clean checkout
+`b79a02d1ac8ef987dd34abeb2297a231b109f7a6`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
 Signature-verification dependencies are isolated in one exact optional extra:
@@ -83,10 +83,18 @@ and returns ordinary Core `NodeHealthReadRequest` data. It has no callback,
 network, replay cache, graph-admission proof or credential custody. Repeated
 valid admission retains the same observation identity.
 
-SDK #22 deliberately adopts Core `95452249d0340707a5cdffe737e34669e9d53165`,
+SDK #22 adopted Core `95452249d0340707a5cdffe737e34669e9d53165`,
 including changed shared public-wire contracts as well as health declarations.
 [Decision 0015](docs/decisions/0015-signed-health-read-admission.md) records the
 admission boundary and credential limits.
+
+SDK #30 advances the dependency to Core
+`b79a02d1ac8ef987dd34abeb2297a231b109f7a6` so Secrets
+can adopt the same accepted health-key intent contract. The SDK's consumed
+control, health and key contracts are unchanged; the broader Core update adds
+runtime-management/planning values and root imports. Existing SDK behavior
+and import isolation must pass the ordinary pinned gate. This dependency
+change adds no request signing, key custody or provider authority.
 
 For a V2 declaration, the optional health dispatcher binds the installed context
 to two named synchronous callbacks. Each declared callback returns only a Core

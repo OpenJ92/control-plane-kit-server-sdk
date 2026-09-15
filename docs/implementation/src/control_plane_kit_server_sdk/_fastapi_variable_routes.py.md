@@ -26,7 +26,7 @@ Workload apply may mutate caller-owned durable state; this adapter does not own
 that transaction or undo effects after a failed result.
 
 Result normalization in [_control_dispatch.py](_control_dispatch.py.md) uses
-consumer Core 95452249's codec, exact operation result
+consumer Core b79a02d1's codec, exact operation result
 types, matching request ID/operation and compact ASCII JSON capped at 16 KiB.
 Valid Core rejection/failure remains an HTTP 200 nominal result. Transport,
 credential, locality, lookup, replay conflict/capacity and ordinary internal
