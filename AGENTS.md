@@ -123,6 +123,23 @@ Use law cards and focused target-red evidence only for an explicitly governed
 migration/parity issue or when a focused failure is needed to establish
 causality for missing behavior.
 
+## Source Trace Before Design
+
+Inspect governing tests and extract the applicable behavioral laws before the
+source dry run. Before proposing an interface, implementation plan, or issue
+split, read the consuming entrypoint, relevant imports, and exact dependency
+coordinates it selects. Trace input through transformations, authority checks,
+external effects, and output or durable history, with a few function/file
+anchors. Include failure, uncertainty, and replay where they affect the path.
+
+Distinguish selected behavior, newer merged but unselected code, proposed
+changes, and independently observed live evidence. A merge or unrelated green
+gate does not prove adoption. State the last working boundary and smallest
+missing connection; reuse existing owners rather than inventing prerequisites
+for an untraced gap or reviving a legacy fallback. Keep the explanation in the
+existing issue/PR decision log, not a new report system. Design the target
+interface and tests from that trace while preserving the governing laws.
+
 ## Package Ownership
 
 The dependency direction is one-way:
