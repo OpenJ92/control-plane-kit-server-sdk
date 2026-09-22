@@ -19,8 +19,13 @@ context is not an authority token. [The package gate](test.sh.md) and its suppor
 companions distinguish source checks, installed-package evidence and live
 runtime acceptance.
 
-SDK #30 starts from accepted develop `e822df4ddd4093f6129c65c8fc0707841a84dc51`.
-The metadata selects Core `b79a02d1ac8ef987dd34abeb2297a231b109f7a6`.
+SDK #30 started from accepted develop `e822df4ddd4093f6129c65c8fc0707841a84dc51`
+and selected Core `b79a02d1ac8ef987dd34abeb2297a231b109f7a6`.
+SDK #34 starts from develop `2a5fcf54c2768114a7a484abb4f4c5d1dfe19410`
+and selects Core `e074bda49fa0c46f420d675e45a93f787b460c02`. Its source
+delta is confined to Core management planning compilation and observations;
+the SDK-consumed control, health and key definitions are unchanged. The
+unchanged owner gate must establish compatibility and import isolation.
 The original rollout reviewed `7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79`
 with Core `0ee72c3fcdfbee5094357152bdf070fbfc53393c`; that is historical
 review provenance, not the current dependency. Selected direct dependencies
