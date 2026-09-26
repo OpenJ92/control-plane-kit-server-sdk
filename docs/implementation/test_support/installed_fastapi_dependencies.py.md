@@ -4,8 +4,8 @@ Maintain this document alongside its source file. When the source or relevant im
 After importing the SDK root, this probe requires FastAPI, Starlette, AnyIO,
 jwt and cryptography to remain unloaded. It checks distribution metadata for
 PyJWT 2.13.0, cryptography 50.0.0, FastAPI 0.141.1 and Starlette 1.6.0, then
-imports the public SDK FastAPI adapter and requires its sole __all__ entry to be
-install_cpk_control_routes. AnyIO laziness is checked, but its version is not
+imports the public SDK FastAPI adapter and requires its exact __all__ entries to be
+install_cpk_control_routes and install_cpk_wrapper. AnyIO laziness is checked, but its version is not
 pinned or checked here.
 
 Successful import establishes availability of the optional adapter surface. It

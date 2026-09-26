@@ -590,7 +590,7 @@ with Path(os.environ["CPK_FASTAPI_PROBE_EVENTS"]).open("a") as stream:
                 "    stream.write('adapter\\n')\n"
                 "def install_cpk_control_routes():\n"
                 "    return None\n"
-                "__all__ = ['install_cpk_control_routes']\n",
+                "__all__ = ['install_cpk_control_routes', 'install_cpk_wrapper']\n",
                 encoding="utf-8",
             )
             self._write_fake_module(

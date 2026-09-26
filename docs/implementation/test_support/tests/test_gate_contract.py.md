@@ -29,3 +29,5 @@ checks here, while extra probes also receive fixture execution. Workflow checks
 look for required/forbidden strings rather than interpreting GitHub Actions
 semantics. Phase-order and cleanup assertions inspect shell text; they do not
 prove all failure paths, daemon ownership or successful cleanup at runtime.
+
+SDK38 extends the nominal FastAPI fixture export list with the additive wrapper helper, matching the installed probe's exact inventory. The fixture still proves probe control flow only. Version rejection, root laziness, bounded metadata failures and all behavioral package targets remain unchanged. Run36268341228 passed all195 package tests but exposed the stale downstream installed export inventory; this correction follows that concrete failure without altering the gate or dependencies.
