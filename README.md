@@ -16,7 +16,7 @@ python -m pip install .
 
 It is not published to a package index. The base dependency is the immutable
 `control-plane-kit-core` source at
-`e074bda49fa0c46f420d675e45a93f787b460c02`; installing from a clean checkout
+`f1e6cf2420bf2ec381aab745f462d4e64baef5fc`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
 Signature-verification dependencies are isolated in one exact optional extra:
@@ -101,6 +101,13 @@ coherent downstream bootstrap planning adoption. Relative to the #30 pin,
 Core source changes only management planning compilation and observations;
 the SDK-consumed control, health and key contracts remain unchanged.
 Compatibility requires the complete unchanged SDK owner gate.
+
+SDK #36 selects Core `f1e6cf2420bf2ec381aab745f462d4e64baef5fc`
+for the Servers #181 managed-execution dependency chain. Since #34, Core
+source changes operations HTTP/lifecycle/parity/recovery and planning/saga;
+the SDK-consumed control, health, key and route-template contracts are unchanged.
+The ordinary pinned gate checks compatibility; this adopts no server wiring,
+image qualification or live deployment.
 
 For a V2 declaration, the optional health dispatcher binds the installed context
 to two named synchronous callbacks. Each declared callback returns only a Core
