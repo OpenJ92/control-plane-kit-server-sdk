@@ -27,3 +27,5 @@ must reject before admission/discovery; authenticated foreign target/declaration
 must reject before disclosure. Recorded clock thread IDs verify off-loop work
 for the selected calls. These schedules and fixtures do not establish all
 concurrency behavior, cryptographic dependency correctness or runtime health.
+
+SDK38 extends only the exact optional module export inventory with `install_cpk_wrapper`; the existing installer signature and every behavioral/negative assertion remain unchanged. Source gate36268158788 proved all ten new real-host targets but exposed this stale additive export inventory. The owning gate is rerun after this bounded test correction; no source behavior or target body changed.
