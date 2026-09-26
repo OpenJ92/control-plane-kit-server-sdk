@@ -26,6 +26,13 @@ and selects Core `e074bda49fa0c46f420d675e45a93f787b460c02`. Its source
 delta is confined to Core management planning compilation and observations;
 the SDK-consumed control, health and key definitions are unchanged. The
 unchanged owner gate must establish compatibility and import isolation.
+SDK #36 starts from accepted develop `d8b72e52c8ebca65bf21a2a2ae51df663b1c8a77`
+and selects Core `f1e6cf2420bf2ec381aab745f462d4e64baef5fc`. The exact delta
+since #34 touches operations HTTP/lifecycle/parity/recovery and planning/saga;
+the SDK-consumed control, health, key and route-template definitions are
+unchanged. Pin-bearing companions reflect the selected coordinate; their
+behavioral accounts were reviewed with no semantic change. The ordinary pinned
+gate must establish compatibility and import isolation before acceptance.
 The original rollout reviewed `7a9cc5e104a2a310e78f0d4ec742dff78cdd8e79`
 with Core `0ee72c3fcdfbee5094357152bdf070fbfc53393c`; that is historical
 review provenance, not the current dependency. Selected direct dependencies

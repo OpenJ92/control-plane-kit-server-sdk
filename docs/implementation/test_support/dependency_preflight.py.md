@@ -1,7 +1,7 @@
 Source: [test_support/dependency_preflight.py](../../../test_support/dependency_preflight.py).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-The guard parses trusted pyproject.toml and requires one exact Core dependency at e074bda49fa0c46f420d675e45a93f787b460c02 plus the unchanged ordered direct verification/FastAPI extras. Wrong repositories, mutable/other commits, spellings, missing subdirectory or extras fail closed; this update changes the accepted coordinate, not equality semantics.
+The guard parses trusted pyproject.toml and requires one exact Core dependency at f1e6cf2420bf2ec381aab745f462d4e64baef5fc plus the unchanged ordered direct verification/FastAPI extras. Wrong repositories, mutable/other commits, spellings, missing subdirectory or extras fail closed; this update changes the accepted coordinate, not equality semantics.
 
 The owning test.sh invokes the guard before package build/install in either dependency mode. Local-core still passes metadata preflight first and is separately classified composition evidence. Read/TOML errors are normalized to the CLI's fixed failure and exit2; success reports the coordinate. This does not fetch or authenticate artifact bytes, verify Core provenance or perform signing/credential access.
 
@@ -9,7 +9,7 @@ The owning test.sh invokes the guard before package build/install in either depe
 
 This repository-local guard parses pyproject.toml with tomllib and compares its
 project dependency values to one accepted shape. The base list must contain only
-the Core archive URL at e074bda49fa0c46f420d675e45a93f787b460c02 with the Core
+the Core archive URL at f1e6cf2420bf2ec381aab745f462d4e64baef5fc with the Core
 subdirectory. Optional extras must be exactly verification and fastapi, with
 their ordered direct-version lists. List order matters; mapping key order does
 not. Missing/extra coordinates and semantically similar alternate spellings
