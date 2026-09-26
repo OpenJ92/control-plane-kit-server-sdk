@@ -1,7 +1,7 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-The base dependency selects Core f1e6cf2420bf2ec381aab745f462d4e64baef5fc,
+The base dependency selects Core 79c1a8bfe049ab17604466da00d43a1258ae33f9,
 matching the exact dependency-preflight guard. SDK #36 advances #34's e074bda4
 for the Servers #181 dependency chain. The exact Core delta changes operations
 HTTP/lifecycle/parity/recovery and planning/saga; SDK-consumed control, health,
@@ -26,3 +26,8 @@ selected commit, then update affected companions and consumer handoffs; do not
 infer SDK behavior from latest upstream Core. The base framework-neutral import
 boundary and optional adapter imports need separate verification. Dependency
 metadata is not proof that an extra is installed or a gate has passed.
+
+SDK38 adopts the actual reviewed Core1871 merge for its shared wrapper wire.
+Existing command/health authority and framework dependency versions remain
+unchanged. This coordinate adoption is required before missing-SDK-behavior
+red; it is not automatic setup or a runtime claim by itself.
