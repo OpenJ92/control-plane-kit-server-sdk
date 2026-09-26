@@ -609,7 +609,7 @@ class FastApiControlRouteTests(unittest.TestCase):
 
     def test_public_optional_module_signature_and_exact_dependency_truth(self) -> None:
         module = self._module()
-        self.assertEqual(module.__all__, ["install_cpk_control_routes"])
+        self.assertEqual(module.__all__, ["install_cpk_control_routes", "install_cpk_wrapper"])
         function = module.install_cpk_control_routes
         signature = inspect.signature(function)
         self.assertEqual(

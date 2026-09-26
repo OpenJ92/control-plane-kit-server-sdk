@@ -26,7 +26,7 @@ _STANDARD_HOOKS = (
 
 
 def _validate_host(server: object, reserve_control_namespace: object) -> type[BaseHTTPRequestHandler]:
-    if type(server) not in (HTTPServer, ThreadingHTTPServer) or reserve_control_namespace is not True:
+    if type(server) not in (HTTPServer, ThreadingHTTPServer, CpkHTTPServer, CpkThreadingHTTPServer) or reserve_control_namespace is not True:
         raise ValueError
     connection = server.socket
     if (type(connection) is not socket.socket or connection.fileno() < 0
@@ -114,4 +114,58 @@ def install_cpk_control_routes(
     server.RequestHandlerClass = prepared_handler
 
 
-__all__ = ["install_cpk_control_routes"]
+
+class _CpkServerLifecycle:
+    """Public stdlib hooks only; the ordinary server owns its network loop."""
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, *,
+                 configuration=None, clock=None, variables=(), liveness=None, readiness=None):
+        from control_plane_kit_server_sdk.wrapper import _prepare_wrapper
+
+        wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness)
+        self._cpk_lifecycle = wrapper.lifecycle
+        super().__init__(server_address, RequestHandlerClass, bind_and_activate=False)
+        try:
+            install_cpk_control_routes(self, reserve_control_namespace=True, variables=variables, **wrapper.settings)
+            if bind_and_activate:
+                self.server_bind()
+                self.server_activate()
+        except BaseException:
+            self.server_close()
+            raise
+
+    @property
+    def cpk_is_serving(self) -> bool:
+        """Whether this wrapper has observed its host serving, before stopping."""
+        return self._cpk_lifecycle.observe()[1]
+
+    def serve_forever(self, poll_interval=0.5):
+        epoch = self._cpk_lifecycle.begin()
+        try:
+            return super().serve_forever(poll_interval=poll_interval)
+        finally:
+            self._cpk_lifecycle.finish(epoch)
+
+    def service_actions(self):
+        epoch = self._cpk_lifecycle.observe()[0]
+        super().service_actions()
+        self._cpk_lifecycle.serving(epoch)
+
+    def shutdown(self):
+        # Preserve stdlib's requirement to call from outside the serving thread.
+        self._cpk_lifecycle.stop()
+        return super().shutdown()
+
+    def server_close(self):
+        self._cpk_lifecycle.stop()
+        return super().server_close()
+
+
+class CpkHTTPServer(_CpkServerLifecycle, HTTPServer):
+    """Configuration-driven IPv4 HTTP server with automatic baseline health."""
+
+
+class CpkThreadingHTTPServer(_CpkServerLifecycle, ThreadingHTTPServer):
+    """Configuration-driven threaded IPv4 HTTP server; stdlib threading semantics."""
+
+
+__all__ = ["install_cpk_control_routes", "CpkHTTPServer", "CpkThreadingHTTPServer"]

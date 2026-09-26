@@ -32,3 +32,5 @@ failures become one of three fixed cause-free messages; BaseExceptions and
 external caller effects are not a rollback guarantee. See
 [installer tests](../../tests/test_fastapi_control_routes.py.md) and
 [decision 0014](../../../../docs/decisions/0014-atomic-fastapi-control-route-installation.md).
+
+SDK38 adds `install_cpk_wrapper` as an ergonomic composition helper around the same installer, selecting Core79c1 shared configuration via the optional neutral wrapper module. It prepares authority and lifecycle before route publication, captures the original lifespan, and replaces lifespan only after route installation succeeds. The async context manager invokes original startup/shutdown once, preserves yielded state and exceptions, marks serving after successful startup, and clears readiness before original shutdown (also on startup failure). No additional route interpreter or listener is introduced. Existing low-level installation retains caller-owned callbacks/lifecycle. Configuration and collision failures leave routes and lifespan unchanged; startup composition remains serialized, not concurrent mutation support.
