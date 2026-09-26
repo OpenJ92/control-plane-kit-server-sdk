@@ -391,3 +391,53 @@ The repository does not own control-plane operations stores, cpk-server,
 Docker interpreters, server products, provider clients, or application state.
 FastAPI support is an optional public submodule rather than a base or package-
 root dependency; the root import remains framework-neutral.
+
+## Configuration-driven wrapper setup
+
+For a workload whose CPK composition delivers the shared configuration, install
+`.[fastapi]` and use:
+
+```python
+from fastapi import FastAPI
+from control_plane_kit_server_sdk.fastapi import install_cpk_wrapper
+
+app = FastAPI()
+# Define application routes and lifespan before installing the wrapper.
+install_cpk_wrapper(app)
+```
+
+For a standard-library host, install `.[verification]` and replace normal server
+construction with an SDK-owned server:
+
+```python
+from http.server import BaseHTTPRequestHandler
+from control_plane_kit_server_sdk.stdlib import CpkThreadingHTTPServer
+
+class ApplicationHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(204)
+        self.end_headers()
+
+with CpkThreadingHTTPServer(("127.0.0.1", 8080), ApplicationHandler) as server:
+    server.serve_forever()
+```
+
+The composition supplies `CPK_WRAPPER_CONFIGURATION_FILE`, an absolute path to
+the delivered regular, non-symlink 0444 JSON file. The SDK snapshots it once,
+uses Core's shared codec, and constructs all declared verifier families. Users
+do not write identity/key JSON or instantiate verifiers for normal onboarding.
+Trusted composition can also supply the same `configuration` value explicitly.
+Operations/Servers delivery adoption is a separate dependent change; this SDK
+API alone does not establish that the running controller delivers it.
+
+No callbacks are needed for baseline health. Authenticated liveness reports
+wrapper responsiveness. Readiness becomes healthy after FastAPI's original
+startup completes or the stdlib loop observes serving, and clears before
+shutdown or on loop exit/failure. It does not assert database or business
+readiness. Optional synchronous `liveness`/`readiness` callbacks can add product
+checks for declared health kinds; readiness cannot override a stopped host.
+Existing application handlers, lifespan state, command replay and signed
+admission remain their existing owners. Stdlib `shutdown()` retains its normal
+requirement to run outside the serving thread; `cpk_is_serving` reports observed
+lifecycle and does not control it. The earlier low-level installer examples
+remain available for explicit composition.
