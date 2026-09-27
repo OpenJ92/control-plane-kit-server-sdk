@@ -3,14 +3,14 @@ Maintain this document alongside its source file. When the source or relevant im
 
 The distribution/foundation suite retains exact metadata, dependency, package/export ownership and lazy import assertions. #22 adopted Core95452249 and added two neutral health key exports to the exact root inventory. #23 names the new private health FastAPI adapter in the existing narrow framework-import-owner inventory. No general import exemption is introduced; crypto ownership and actual behavioral assertions remain unchanged. Subprocess source imports are distinct from installed probes. Historical documentation-string and syntactic import checks are not crypto or runtime proofs.
 
-SDK #36 changes only the accepted dependency and README pin expectations, as
-SDK #30 and #34 previously did; all
+SDK #41 changes only the accepted dependency and README pin expectations, as
+the earlier coordinate adoptions did; all
 existing metadata, source-import, export and negative assertions remain.
 
 ## Behavior and evidence details
 
 These tests preserve distribution shape: exact name/version, Python floor,
-setuptools configuration, empty console-script surface, Core 79c1a8bf dependency,
+setuptools configuration, empty console-script surface, Core 6b2d173b dependency,
 ordered direct extras and the installed py.typed declaration. Metadata equality
 is deliberate; a pin or public export change needs coordinated contract review.
 
