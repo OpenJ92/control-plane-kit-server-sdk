@@ -1,12 +1,15 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-The base dependency selects Core 79c1a8bfe049ab17604466da00d43a1258ae33f9,
-matching the exact dependency-preflight guard. SDK #36 advances #34's e074bda4
-for the Servers #181 dependency chain. The exact Core delta changes operations
-HTTP/lifecycle/parity/recovery and planning/saga; SDK-consumed control, health,
-key and route-template definitions are unchanged. The complete existing SDK
-suite must establish compatibility, including import isolation. Verification
+SDK #41 selects accepted Core1877 merge
+6b2d173bccbab9f8cb4fa4c35fef60d2ca27aa0e, matching the exact dependency-preflight
+guard. Compared with the prior Core79c1a8b selection, only operations HTTP,
+projection and parity declarations change to expose the workload verifier read.
+SDK-consumed wrapper, control, health, key and route-template definitions are
+unchanged. The complete ordinary pinned SDK suite establishes compatibility,
+including import isolation. This supplies a compatible dependency coordinate
+for Secrets39, Interpreters173 and Servers237; runtime SDK behavior is unchanged.
+Verification
 still pins PyJWT2.13.0/cryptography50.0.0; FastAPI adds
 fastapi0.141.1/starlette1.6.0. Version0.1.0, Python floor, package discovery,
 py.typed and build dependency shape remain unchanged. Direct pins are not
