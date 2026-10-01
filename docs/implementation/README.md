@@ -61,3 +61,11 @@ record the source changes and fixture translations. Historical decisions and
 prior acceptance coordinates remain provenance; README and current owners state
 the supported transport matrix. O3/controller command delivery is outside this
 SDK change. PR #44 owns candidate gate/review evidence.
+
+SDK #45 selects accepted Core1916 merge
+`250d65e19dc748ebe840f705be77eb732dab3cb3`. Only Core's gateway advertisement
+production owner changed; SDK receiver imports and behavior are unchanged.
+Dependency/preflight/foundation coordinates and pin-bearing companions are
+updated together. Existing foundation/preflight test companions reflect the new
+coordinate with no behavioral change. The ordinary pinned gate owns adoption evidence;
+Secrets43 waits for the actual accepted SDK merge.
