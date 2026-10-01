@@ -34,3 +34,10 @@ character and an eight-character request ID: the request reaches exactly951
 bytes and grant1984 without widening any SDK framing ceiling. Kepler checked
 this fixture arithmetic against accepted Core. Runtime replaces graph revision
 inside target; original graph context is separate request data.
+
+Candidate51dad05 gate36886008866 exposed that a wrong-purpose receiver grant
+cannot be constructed as a Core value. The negative fixture now changes only
+the embedded raw purpose descriptor before real signing, so the unchanged SDK
+refusal assertion and subsequent common-PEM isolation test are actually reached.
+This preserves Core's constructor law and does not forge a frozen grant. North's
+PR44 release5934956351 authorizes this bounded test-only correction.

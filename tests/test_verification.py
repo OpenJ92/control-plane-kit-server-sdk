@@ -2097,13 +2097,14 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                 request,
             )
         )
-        wrong_purpose = replace(
-            grant,
-            purpose=DelegationKeyPurpose.WORKLOAD_NODE_CONTROL,
-        )
+        wrong_purpose = {
+            **grant.descriptor(),
+            "purpose": DelegationKeyPurpose.WORKLOAD_NODE_CONTROL.value,
+        }
         self._assert_rejected(
             lambda: self._admit(
-                _surface_token(self.private_a, wrong_purpose),
+                _surface_token(self.private_a, grant,
+                               payload_changes={SURFACE_PAYLOAD_KEY: wrong_purpose}),
                 request,
             )
         )

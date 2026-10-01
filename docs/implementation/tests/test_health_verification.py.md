@@ -15,3 +15,9 @@ plus workspace/runtime/node/socket and declaration. The reachable maximum uses
 128-character target/request fields with authority IDs of lengths1/25, reaching
 request1083 and grant2107. All prior segment/aggregate overflow and signed
 whitespace cases remain; no bound is enlarged.
+
+Candidate51dad05 gate36886008866 exposed one missed cross-family call: both
+command/surface verifier branches now receive independently constructed local
+target/declaration fixtures. This restores the existing precise SDK refusal
+assertions instead of failing at missing Python keyword arguments. North's
+PR44 release5934956351 authorizes this bounded test-only correction.

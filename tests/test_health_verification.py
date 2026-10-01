@@ -343,7 +343,9 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
             old = verifier_type(holder, expected_issuer=fixtures.ISSUER,
                                 expected_audience=fixtures.AUDIENCE, clock=lambda: 150)
             with self.assertRaises(error):
-                old.admit(self.token(), candidate=None, **arguments)
+                old.admit(self.token(), candidate=None,
+                          expected_target=fixtures._target(),
+                          expected_declaration=fixtures.receiver_declaration(), **arguments)
         for purpose in core.DelegationKeyPurpose:
             if purpose is not core.DelegationKeyPurpose.WORKLOAD_NODE_HEALTH_READ:
                 with self.assertRaises(ValueError):
