@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from control_plane_kit_core import (
     ControlPlaneVariableDescriptor, NodeControlGraphReference,
     NodeControlGraphReferenceRole, NodeControlOperation, NodeControlResultCodec,
-    NodeControlTarget, WorkloadNodeControlSurfaceDeclaration,
+    NodeControlReceiverTarget, WorkloadNodeControlSurfaceDeclaration,
 )
 from control_plane_kit_server_sdk._replay import _ProcessLocalNodeControlReplay
 from control_plane_kit_server_sdk.verification import (
@@ -55,7 +55,8 @@ async def _handle(
     variable_name: str,
     operation: NodeControlOperation,
     *,
-    target: NodeControlTarget,
+    target: NodeControlReceiverTarget,
+    declaration: WorkloadNodeControlSurfaceDeclaration,
     registry: dict[
         str,
         tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
@@ -98,6 +99,7 @@ async def _handle(
         route_operation=operation,
         route_variable=route_variable,
         target=target,
+        declaration=declaration,
         registry=registry,
         verifier=verifier,
         replay=replay,
@@ -107,7 +109,8 @@ async def _handle(
 
 def _build_variable_routes_from_registry(
     *,
-    target: NodeControlTarget,
+    target: NodeControlReceiverTarget,
+    declaration: WorkloadNodeControlSurfaceDeclaration,
     registry: dict[
         str,
         tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
@@ -116,7 +119,8 @@ def _build_variable_routes_from_registry(
     replay: _ProcessLocalNodeControlReplay,
 ) -> tuple[object, ...]:
     if (
-        type(target) is not NodeControlTarget
+        type(target) is not NodeControlReceiverTarget
+        or type(declaration) is not WorkloadNodeControlSurfaceDeclaration
         or type(registry) is not dict
         or type(verifier) is not Ed25519WorkloadNodeControlVerifier
         or type(replay) is not _ProcessLocalNodeControlReplay
@@ -131,6 +135,7 @@ def _build_variable_routes_from_registry(
             variable_name,
             NodeControlOperation.READ_STATE,
             target=target,
+            declaration=declaration,
             registry=registry,
             verifier=verifier,
             replay=replay,
@@ -142,6 +147,7 @@ def _build_variable_routes_from_registry(
             variable_name,
             NodeControlOperation.APPLY_COMMAND,
             target=target,
+            declaration=declaration,
             registry=registry,
             verifier=verifier,
             replay=replay,
@@ -166,14 +172,14 @@ def _build_variable_routes_from_registry(
 
 def _build_variable_routes(
     *,
-    target: NodeControlTarget,
+    target: NodeControlReceiverTarget,
     declaration: WorkloadNodeControlSurfaceDeclaration,
     variables: tuple[object, ...],
     verifier: Ed25519WorkloadNodeControlVerifier,
     replay: _ProcessLocalNodeControlReplay,
 ) -> tuple[object, ...]:
     if (
-        type(target) is not NodeControlTarget
+        type(target) is not NodeControlReceiverTarget
         or type(declaration) is not WorkloadNodeControlSurfaceDeclaration
         or type(variables) is not tuple
         or type(verifier) is not Ed25519WorkloadNodeControlVerifier
@@ -187,6 +193,7 @@ def _build_variable_routes(
     )
     return _build_variable_routes_from_registry(
         target=target,
+        declaration=declaration,
         registry=registry,
         verifier=verifier,
         replay=replay,

@@ -9,11 +9,12 @@ import time
 from typing import Callable
 
 from control_plane_kit_core import (
-    NodeControlCommandRequest,
+    ReceiverNodeControlRequest,
     NodeControlFailed,
     NodeControlOperation,
     NodeControlRejected,
-    NodeControlResultCodec,
+    ReceiverNodeControlResultCodec,
+    ReceiverNodeControlResult,
     NodeControlTransitionSucceeded,
 )
 from control_plane_kit_core.node_control import (
@@ -73,7 +74,7 @@ class _Terminal:
 
 
 _Entry = _InFlight | _Terminal
-_ApplyResult = NodeControlTransitionSucceeded | NodeControlRejected | NodeControlFailed
+_ApplyResult = ReceiverNodeControlResult
 
 
 def _serialize_terminal_descriptor(descriptor: object) -> bytes:
@@ -99,7 +100,7 @@ def _serialize_terminal_descriptor(descriptor: object) -> bytes:
 
 def _decode_terminal(
     terminal_bytes: bytes,
-    result_codec: NodeControlResultCodec,
+    result_codec: ReceiverNodeControlResultCodec,
     request_id: str,
 ) -> _ApplyResult:
     failed = False
@@ -112,7 +113,8 @@ def _decode_terminal(
         failed = True
     if (
         failed
-        or type(decoded) not in _RESULT_TYPES
+        or type(decoded) is not ReceiverNodeControlResult
+        or type(decoded.outcome) not in _RESULT_TYPES
         or decoded.operation is not NodeControlOperation.APPLY_COMMAND
         or type(decoded.request_id) is not str
         or decoded.request_id != request_id
@@ -123,19 +125,14 @@ def _decode_terminal(
 
 def _normalize_terminal(
     result: object,
-    result_codec: NodeControlResultCodec,
+    result_codec: ReceiverNodeControlResultCodec,
     request_id: str,
 ) -> bytes:
-    failed = type(result) not in _RESULT_TYPES
-    descriptor: object = None
-    if not failed:
-        try:
-            descriptor = result_codec.encode(result)
-        except Exception:
-            failed = True
-    if failed:
+    if type(result) is not ReceiverNodeControlResult or type(result.outcome) not in _RESULT_TYPES:
         raise ValueError("node-control replay terminal is invalid")
-    terminal_bytes = _serialize_terminal_descriptor(descriptor)
+    terminal_bytes = result_codec.encode_canonical_bytes(result)
+    if type(terminal_bytes) is not bytes or not 1 <= len(terminal_bytes) <= MAX_NODE_CONTROL_PAYLOAD_BYTES:
+        raise ValueError("node-control replay terminal is invalid")
     _decode_terminal(terminal_bytes, result_codec, request_id)
     return terminal_bytes
 
@@ -164,9 +161,9 @@ class _ProcessLocalNodeControlReplay:
 
     def execute(
         self,
-        request: NodeControlCommandRequest,
+        request: ReceiverNodeControlRequest,
         *,
-        result_codec: NodeControlResultCodec,
+        result_codec: ReceiverNodeControlResultCodec,
         dispatch: Callable[[], object],
     ) -> _ApplyResult:
         prepared = self._prepare(request, result_codec, dispatch)
@@ -279,11 +276,11 @@ class _ProcessLocalNodeControlReplay:
         dispatch: object,
     ) -> tuple[str, str, bytes] | None:
         if (
-            type(request) is not NodeControlCommandRequest
+            type(request) is not ReceiverNodeControlRequest
             or request.operation is not NodeControlOperation.APPLY_COMMAND
             or type(request.request_id) is not str
             or type(request.idempotency_key) is not str
-            or type(result_codec) is not NodeControlResultCodec
+            or type(result_codec) is not ReceiverNodeControlResultCodec
             or not callable(dispatch)
         ):
             return None
@@ -293,11 +290,12 @@ class _ProcessLocalNodeControlReplay:
         try:
             digest = request.canonical_digest()
             digest_value = digest.value
+            fallback = result_codec.result(NodeControlFailed(
+                request_id=request.request_id, operation=NodeControlOperation.APPLY_COMMAND))
+            if fallback.request != request or fallback.request.canonical_digest() != digest:
+                return None
             fallback_bytes = _normalize_terminal(
-                NodeControlFailed(
-                    request_id=request.request_id,
-                    operation=NodeControlOperation.APPLY_COMMAND,
-                ),
+                fallback,
                 result_codec,
                 request.request_id,
             )
@@ -348,7 +346,7 @@ class _ProcessLocalNodeControlReplay:
     def _decode_or_fallback(
         terminal_bytes: bytes | None,
         fallback_bytes: bytes,
-        result_codec: NodeControlResultCodec,
+        result_codec: ReceiverNodeControlResultCodec,
         request_id: str,
     ) -> _ApplyResult:
         if terminal_bytes is not None:

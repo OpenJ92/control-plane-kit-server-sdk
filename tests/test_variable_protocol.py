@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import get_args, get_type_hints
 import unittest
 
+from tests.receiver_values import receiver_context, receiver_declaration
+
 from control_plane_kit_core import (
     ControlPlaneCommandCodec,
     ControlPlaneResultCodec,
@@ -15,8 +17,8 @@ from control_plane_kit_core import (
     ControlPlaneVariableDescriptor,
     ControlPlaneVariableKind,
     ControlPlaneVariableOperationContract,
-    NodeControlCommandRequest,
-    NodeControlCommandRequestCodec,
+    ReceiverNodeControlRequest,
+    ReceiverNodeControlRequestCodec,
     NodeControlEvidence,
     NodeControlEvidenceCode,
     NodeControlFailed,
@@ -27,7 +29,7 @@ from control_plane_kit_core import (
     NodeControlReadStateSucceeded,
     NodeControlRejected,
     NodeControlResultCodec,
-    NodeControlTarget,
+    NodeControlReceiverTarget,
     NodeControlTransitionSucceeded,
     ScalarControlState,
 )
@@ -52,14 +54,15 @@ def _reference(
     return NodeControlGraphReference(role, value)
 
 
-def _target() -> NodeControlTarget:
-    return NodeControlTarget(
+def _target() -> NodeControlReceiverTarget:
+    return NodeControlReceiverTarget(
+        receiver_id="a" * 32,
         workspace_id=_reference(
             NodeControlGraphReferenceRole.WORKSPACE,
             "workspace-1",
         ),
-        graph_revision=_reference(
-            NodeControlGraphReferenceRole.GRAPH_REVISION,
+        runtime_id=_reference(
+            NodeControlGraphReferenceRole.RUNTIME,
             "revision-7",
         ),
         node_id=_reference(NodeControlGraphReferenceRole.NODE, "router"),
@@ -93,8 +96,10 @@ def _variable_descriptor() -> ControlPlaneVariableDescriptor:
     )
 
 
-def _read_request(request_id: str = "request-read-1") -> NodeControlCommandRequest:
-    return NodeControlCommandRequest(
+def _read_request(request_id: str = "request-read-1") -> ReceiverNodeControlRequest:
+    return ReceiverNodeControlRequest(
+        authority_context=receiver_context(),
+        declaration_identity=receiver_declaration().identity(),
         target=_target(),
         variable_name=_reference(
             NodeControlGraphReferenceRole.VARIABLE,
@@ -106,8 +111,10 @@ def _read_request(request_id: str = "request-read-1") -> NodeControlCommandReque
     )
 
 
-def _apply_request(request_id: str = "request-apply-1") -> NodeControlCommandRequest:
-    return NodeControlCommandRequest(
+def _apply_request(request_id: str = "request-apply-1") -> ReceiverNodeControlRequest:
+    return ReceiverNodeControlRequest(
+        authority_context=receiver_context(),
+        declaration_identity=receiver_declaration().identity(),
         target=_target(),
         variable_name=_reference(
             NodeControlGraphReferenceRole.VARIABLE,
@@ -143,7 +150,7 @@ class FakeDurableService:
             state=self.state,
         )
 
-    def replace(self, request: NodeControlCommandRequest) -> NodeControlTransitionSucceeded:
+    def replace(self, request: ReceiverNodeControlRequest) -> NodeControlTransitionSucceeded:
         assert request.payload is not None
         self.state = request.payload.state
         self.version += 1
@@ -170,7 +177,7 @@ class FakeDurableVariable:
 
     def apply(
         self,
-        command: NodeControlCommandRequest,
+        command: ReceiverNodeControlRequest,
         context: ControlPlaneInvocationContext,
     ) -> TransitionResult:
         if command is not context.request:
@@ -188,7 +195,7 @@ class MissingDescriptor:
 
     def apply(
         self,
-        command: NodeControlCommandRequest,
+        command: ReceiverNodeControlRequest,
         context: ControlPlaneInvocationContext,
     ) -> TransitionResult:
         return NodeControlFailed(
@@ -203,7 +210,7 @@ class MissingRead:
 
     def apply(
         self,
-        command: NodeControlCommandRequest,
+        command: ReceiverNodeControlRequest,
         context: ControlPlaneInvocationContext,
     ) -> TransitionResult:
         return NodeControlFailed(
@@ -261,7 +268,7 @@ class VariableProtocolTests(unittest.TestCase):
         read_result, command, transition_result = parameters
         self.assertTrue(read_result.__covariant__)
         self.assertFalse(read_result.__contravariant__)
-        self.assertIs(command.__bound__, NodeControlCommandRequest)
+        self.assertIs(command.__bound__, ReceiverNodeControlRequest)
         self.assertTrue(command.__contravariant__)
         self.assertFalse(command.__covariant__)
         self.assertTrue(transition_result.__covariant__)
@@ -358,8 +365,8 @@ class VariableProtocolTests(unittest.TestCase):
         variable = FakeDurableVariable(service)
         request = _apply_request()
         context = ControlPlaneInvocationContext(request)
-        equal_request = NodeControlCommandRequestCodec().decode(
-            NodeControlCommandRequestCodec().encode(request)
+        equal_request = ReceiverNodeControlRequestCodec().decode(
+            ReceiverNodeControlRequestCodec().encode(request)
         )
         self.assertEqual(equal_request, request)
         self.assertIsNot(equal_request, request)

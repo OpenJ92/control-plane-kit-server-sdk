@@ -10,7 +10,7 @@ existing metadata, source-import, export and negative assertions remain.
 ## Behavior and evidence details
 
 These tests preserve distribution shape: exact name/version, Python floor,
-setuptools configuration, empty console-script surface, Core 6b2d173b dependency,
+setuptools configuration, empty console-script surface, Core 1f28d009 dependency,
 ordered direct extras and the installed py.typed declaration. Metadata equality
 is deliberate; a pin or public export change needs coordinated contract review.
 

@@ -34,3 +34,12 @@ Docker-backed test.sh owns execution.
 SDK #26 moves registry/result/interpretation to `_control_dispatch` and byte helpers
 to `_http_framing`. The codec-construction source assertion follows its new owner;
 request streaming and off-loop dispatch remain in the adapter, not this test file.
+
+SDK #43 verifies all four old outcome variants inside the receiver V2 envelope
+and preserves canonical byte/request-digest assertions. An independently supplied
+full declaration reaches each request, including subset registries. Missing
+variables now distinguish undeclared401 from declared-but-uninstalled404;
+foreign fully bound target remains403 before lookup and bad binding401. This
+translates the old law to the stricter receiver declaration contract rather
+than admitting an undeclared command. Registry outcome codec snapshot checks
+remain; request-bound envelope codecs are created after admission.

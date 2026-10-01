@@ -9,10 +9,12 @@ import time
 from types import CoroutineType
 from typing import Callable
 
-from control_plane_kit_core import DelegationKeyPurpose, NodeHealthReadKind, NodeHealthReadOutcome, workload_node_control_audience
+from control_plane_kit_core import DelegationKeyPurpose, NodeHealthReadKind, NodeHealthReadOutcome, receiver_node_control_audience
 from control_plane_kit_core.wrapper_configuration import (
     MAX_WRAPPER_CONFIGURATION_BYTES, WORKLOAD_NODE_CONTROL_CONFIGURATION_ENVIRONMENT,
-    WorkloadNodeControlConfiguration, WorkloadNodeControlConfigurationCodec,
+)
+from control_plane_kit_core.receiver_configuration import (
+    ReceiverNodeControlConfiguration, ReceiverNodeControlConfigurationCodec,
 )
 from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher, _require_sync_callback
 from control_plane_kit_server_sdk import verifier_keys as keys
@@ -23,7 +25,7 @@ class WrapperSetupError(ValueError):
     """A fixed refusal without configuration material or exception links."""
 
 
-def load_wrapper_configuration() -> WorkloadNodeControlConfiguration:
+def load_wrapper_configuration() -> ReceiverNodeControlConfiguration:
     """Snapshot the delivered absolute, regular, non-symlink 0444 file once."""
     try:
         path = os.environ[WORKLOAD_NODE_CONTROL_CONFIGURATION_ENVIRONMENT]
@@ -47,7 +49,7 @@ def load_wrapper_configuration() -> WorkloadNodeControlConfiguration:
             if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                     after.st_size, after.st_mtime_ns, after.st_ctime_ns):
                 raise ValueError
-            return WorkloadNodeControlConfigurationCodec().decode_bytes(b"".join(chunks))
+            return ReceiverNodeControlConfigurationCodec().decode_bytes(b"".join(chunks))
         finally:
             os.close(descriptor)
     except Exception:
@@ -117,10 +119,10 @@ class _Wrapper:
     settings: dict = field(repr=False)
 
 
-def _prepare_wrapper(*, configuration: WorkloadNodeControlConfiguration | None = None,
+def _prepare_wrapper(*, configuration: ReceiverNodeControlConfiguration | None = None,
                      clock: Callable[[], int] | None = None, liveness=None, readiness=None) -> _Wrapper:
     try:
-        codec = WorkloadNodeControlConfigurationCodec()
+        codec = ReceiverNodeControlConfigurationCodec()
         configuration = load_wrapper_configuration() if configuration is None else codec.decode_bytes(codec.encode_bytes(configuration))
         clock = _clock if clock is None else clock
         _require_sync_callback(clock)
@@ -146,11 +148,11 @@ def _prepare_wrapper(*, configuration: WorkloadNodeControlConfiguration | None =
         for family in configuration.verifiers:
             snapshot, holder, verifier = factories[family.purpose]
             verifiers[family.purpose] = verifier(holder(snapshot(family.purpose, family.public_keys)),
-                expected_issuer=family.issuer, expected_audience=workload_node_control_audience(configuration.target), clock=clock)
+                expected_issuer=family.issuer, expected_audience=receiver_node_control_audience(configuration.target), clock=clock)
         dispatcher = None
         if kinds:
             dispatcher = WorkloadNodeHealthReadDispatcher(
-                target=configuration.target, runtime_id=configuration.runtime_id, declaration=configuration.declaration,
+                target=configuration.target, declaration=configuration.declaration,
                 verifier=verifiers[DelegationKeyPurpose.WORKLOAD_NODE_HEALTH_READ],
                 liveness=(_responsive if liveness is None else liveness) if NodeHealthReadKind.LIVENESS in kinds else None,
                 readiness=lifecycle.readiness if NodeHealthReadKind.READINESS in kinds else None,

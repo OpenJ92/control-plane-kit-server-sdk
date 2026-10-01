@@ -8,3 +8,9 @@ Generated parse/Expect/error hooks reserve control before application dispatch a
 SDK38 adds the exact SDK-owned `CpkHTTPServer` and `CpkThreadingHTTPServer` types to accepted hosts and provides automatic setup/lifecycle through their public stdlib hooks. Configuration is validated before socket creation; control installation happens while unbound, before optional normal bind/activate. Installation or bind failure closes the constructed socket and preserves the original exception. Products still decide listener address, when to run/stop and process lifetime; these helpers observe those operations instead of requiring callbacks or manual ready marking.
 
 `serve_forever` brackets the ordinary loop, `service_actions` witnesses entry into service, and `shutdown`/`server_close` clear readiness before delegation. A stopping phase cannot be resurrected by late hooks. `cpk_is_serving` is read-only observation, not business readiness or draining. Standard shutdown caller-thread constraints and threading semantics remain. Arbitrary subclasses remain unsupported by passive installation. The passive installer itself still never binds or starts a host. Actual signed loopback tests cover both classes and deterministic shutdown overlap.
+
+SDK #43 changes the captured target to NodeControlReceiverTarget and automatic
+setup to receiver configuration V2. The same shared dispatcher verifies receiver
+requests and emits correlated health V2, surface V3 and command V2 results.
+Installation, raw parser ownership, listener and lifecycle algorithms are
+unchanged; restart reconstructs configuration identity only.

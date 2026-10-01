@@ -21,3 +21,8 @@ ledger and replay; the SDK supplies neither through this interface.
 [atomic.py](atomic.py.md) is one process-local implementation. The
 [protocol tests](../../tests/test_variable_protocol.py.md) use a fake durable
 owner to demonstrate conformance, not a real database transaction.
+
+SDK #43 adopts exact ReceiverNodeControlRequest from the selected Core 1f28d009
+contracts. The application still returns the existing outcome algebra. Exact
+command/context object identity, atomic state algorithms and domain-owned
+transactions remain unchanged; outer dispatch owns receiver result envelopes.

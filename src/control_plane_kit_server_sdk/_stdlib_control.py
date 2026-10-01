@@ -196,6 +196,7 @@ def _dispatch(handler: object, control: _PreparedControlDispatch) -> None:
             status, body = _interpret_variable(
                 credential=credential, candidate=candidate, route_operation=operation,
                 route_variable=variable, target=control.target, registry=control.registry,
+                declaration=control.declaration,
                 verifier=control.command_verifier, replay=control.replay,
             )
     except WorkloadNodeHealthReadVerificationError:

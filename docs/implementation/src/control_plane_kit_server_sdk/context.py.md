@@ -15,3 +15,8 @@ Core objects. The selected Core owner supplies the request language; see the
 records this neutral trust boundary. [protocol.py](protocol.py.md) requires
 apply implementations to compare the separately supplied command with
 context.request by identity before work.
+
+SDK #43 adopts exact ReceiverNodeControlRequest from the selected Core 1f28d009
+contracts. The application still returns the existing outcome algebra. Exact
+command/context object identity, atomic state algorithms and domain-owned
+transactions remain unchanged; outer dispatch owns receiver result envelopes.

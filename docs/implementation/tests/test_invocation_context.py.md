@@ -10,3 +10,8 @@ storage and wire surfaces; prose checks preserve the recorded neutral trust
 boundary. They do not prove a supplied request was authenticated. Read the
 [context owner](../src/control_plane_kit_server_sdk/context.py.md) and selected
 Core request contract before changing those assumptions.
+
+SDK #43 uses ReceiverNodeControlRequest, receiver target, independent authority
+context and declaration identity fixtures. Type/variance expectations follow
+the successor request; equal-but-distinct identity denial and all application
+state assertions remain unchanged. Outcome codecs retain the existing algebra.

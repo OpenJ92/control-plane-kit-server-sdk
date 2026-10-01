@@ -16,9 +16,9 @@ from unittest.mock import patch
 
 import control_plane_kit_core as core
 from control_plane_kit_core.wrapper_configuration import (
-    NodeControlVerificationConfiguration, WorkloadNodeControlConfiguration,
-    WorkloadNodeControlConfigurationCodec, WORKLOAD_NODE_CONTROL_CONFIGURATION_ENVIRONMENT,
+    NodeControlVerificationConfiguration, WORKLOAD_NODE_CONTROL_CONFIGURATION_ENVIRONMENT,
 )
+from control_plane_kit_core.receiver_configuration import ReceiverNodeControlConfiguration, ReceiverNodeControlConfigurationCodec
 from control_plane_kit_server_sdk import fastapi as fastapi_sdk, stdlib as stdlib_sdk
 from tests import test_fastapi_control_routes as legacy
 from tests import test_fastapi_health_routes as asgi_fixtures
@@ -34,16 +34,16 @@ class WrapperSetupTests(unittest.TestCase):
         self.fixture.setUp()
         self.legacy = legacy.FastApiControlRouteTests()
         self.legacy.setUpClass()
-        self.config = WorkloadNodeControlConfiguration(
-            self.fixture.target, self.fixture.runtime, self.fixture.declaration,
+        self.config = ReceiverNodeControlConfiguration(
+            self.fixture.target, self.fixture.declaration,
             (NodeControlVerificationConfiguration(core.DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
                 legacy.ISSUER, (core.DelegationPublicKey("surface-key-a", core.DelegationKeyAlgorithm.ED25519,
                     legacy._public_pem(self.legacy.surface_private)),)),
              NodeControlVerificationConfiguration(core.DelegationKeyPurpose.WORKLOAD_NODE_HEALTH_READ,
                 self.fixture.grant().issuer, (self.fixture.key,))))
         # Accepted merged Core and genuine signed fixtures must work before target red.
-        self.encoded = WorkloadNodeControlConfigurationCodec().encode_bytes(self.config)
-        self.assertEqual(WorkloadNodeControlConfigurationCodec().decode_bytes(self.encoded), self.config)
+        self.encoded = ReceiverNodeControlConfigurationCodec().encode_bytes(self.config)
+        self.assertEqual(ReceiverNodeControlConfigurationCodec().decode_bytes(self.encoded), self.config)
         self.assertIsNotNone(importlib.util.find_spec(MODULE), "automatic wrapper setup is not implemented")
         self.api = importlib.import_module(MODULE)
 
@@ -71,12 +71,12 @@ class WrapperSetupTests(unittest.TestCase):
     async def asgi(self, app, *, kind=core.NodeHealthReadKind.READINESS, token=None, target=None):
         request = replace(self.fixture.request, kind=kind, target=self.fixture.target if target is None else target)
         signed = self.fixture.token(self.fixture.grant(request,
-            audience=core.workload_node_control_audience(request.target))) if token is None else token
+            audience=core.receiver_node_control_audience(request.target))) if token is None else token
         helper = asgi_fixtures.FastApiHealthRouteTests()
         helper.fixture = self.fixture
         status, _, body = await helper.asgi(app, path="/__control/health/" + kind.value, token=signed)
         if status == 200:
-            return status, core.NodeHealthReadResultCodec(request, self.fixture.declaration).decode(json.loads(body)).outcome
+            return status, core.ReceiverHealthReadResultCodec(request, self.fixture.declaration).decode(json.loads(body)).outcome
         return status, body
 
     def test_opened_file_loader_is_bounded_readonly_and_does_not_expose_inputs(self):
@@ -94,7 +94,7 @@ class WrapperSetupTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.refusal(self.api.load_wrapper_configuration)
         for value in (b"private-canary", b"x" * 65537,
-                      self.encoded.replace(b"workload-node-control-configuration.v1", b"workload-node-control-configuration.v9")):
+                      self.encoded.replace(b"workload-node-control-configuration.v2", b"workload-node-control-configuration.v9")):
             with self.delivered(value):
                 self.refusal(self.api.load_wrapper_configuration)
 
@@ -144,7 +144,7 @@ class WrapperSetupTests(unittest.TestCase):
             first, second = self.legacy._app(), self.legacy._app()
             with self.delivered():
                 self.install(first)
-            with self.delivered(WorkloadNodeControlConfigurationCodec().encode_bytes(other_config)):
+            with self.delivered(ReceiverNodeControlConfigurationCodec().encode_bytes(other_config)):
                 self.install(second)
             async with first.router.lifespan_context(first):
                 self.assertEqual((await self.asgi(first))[1], core.NodeHealthReadOutcome.HEALTHY)
@@ -164,9 +164,10 @@ class WrapperSetupTests(unittest.TestCase):
         config = replace(self.config, declaration=declaration, verifiers=(*self.config.verifiers, command))
         variable = legacy.RecordingVariable("routing")
         app = self.legacy._app()
-        with self.delivered(WorkloadNodeControlConfigurationCodec().encode_bytes(config)):
+        with self.delivered(ReceiverNodeControlConfigurationCodec().encode_bytes(config)):
             self.install(app, variables=(variable,))
-        request = legacy._command_request(core.NodeControlOperation.APPLY_COMMAND, target=self.fixture.target)
+        request = legacy._command_request(core.NodeControlOperation.APPLY_COMMAND, target=self.fixture.target,
+                                          declaration=declaration)
         for _ in range(2):
             self.assertEqual(asyncio.run(self.legacy._command_call(app, request))[0], 200)
         self.assertEqual(variable.apply_calls, 1)
@@ -230,7 +231,7 @@ class WrapperSetupTests(unittest.TestCase):
         helper.fixture = self.fixture
         status, body = helper.response(helper.request(server, token=token))
         if status == 200:
-            return status, core.NodeHealthReadResultCodec(self.fixture.request, self.fixture.declaration).decode(json.loads(body)).outcome
+            return status, core.ReceiverHealthReadResultCodec(self.fixture.request, self.fixture.declaration).decode(json.loads(body)).outcome
         return status, body
 
     def test_stdlib_zero_callback_wrapper_serves_signed_baseline_and_preserves_application(self):

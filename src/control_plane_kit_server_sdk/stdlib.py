@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 import socket
 from typing import Literal
 
-from control_plane_kit_core import NodeControlTarget, WorkloadNodeControlSurfaceDeclaration
+from control_plane_kit_core import NodeControlReceiverTarget, WorkloadNodeControlSurfaceDeclaration
 from control_plane_kit_server_sdk._control_dispatch import (
     _prepare_control_dispatch, _validate_control_configuration,
 )
@@ -48,7 +48,7 @@ def _validate_host(server: object, reserve_control_namespace: object) -> type[Ba
 
 def install_cpk_control_routes(
     server: HTTPServer | ThreadingHTTPServer, *, reserve_control_namespace: Literal[True],
-    target: NodeControlTarget, declaration: WorkloadNodeControlSurfaceDeclaration,
+    target: NodeControlReceiverTarget, declaration: WorkloadNodeControlSurfaceDeclaration,
     variables: tuple[object, ...] = (),
     command_verifier: Ed25519WorkloadNodeControlVerifier | None = None,
     surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,

@@ -16,13 +16,14 @@ capacity is 1,024, with an exact integer maximum of 4,096. A stuck owner can hol
 its reservation indefinitely; this is not a liveness or distributed coordination
 mechanism.
 
-Terminal results are exact APPLY success/rejection/failure values, normalized
-through the selected Core result codec into compact UTF-8 JSON capped at 16 KiB.
-Each return decodes a fresh copy and checks the request ID. The input request
-digest and those bounds come from the consumer's Core f1e6cf2 contracts, not
+Terminal results are receiver V2 envelopes over exact APPLY success/rejection/failure
+outcomes, normalized through the request-bound Core codec into canonical JSON
+capped at 16 KiB for the complete envelope.
+Each return decodes a fresh copy and checks the request ID and original digest. The input request
+digest and those bounds come from the consumer-selected Core 1f28d009 receiver contracts, not
 latest upstream. No callback-owned object is retained as the replay result.
 
-Ordinary dispatch/normalization failure publishes a request-keyed NodeControlFailed.
+Ordinary dispatch/normalization failure publishes a request-correlated envelope containing NodeControlFailed.
 An invalid completion-clock sample also publishes that failure but makes the
 entry unprunable. Process-control BaseExceptions caught from dispatch, result
 normalization or completion-clock sampling are re-raised only after publishing
@@ -46,3 +47,12 @@ See [replay tests](../../tests/test_process_local_replay.py.md) and
 [decision 0011](../../../../docs/decisions/0011-process-local-node-control-replay.md).
 Synchronous verification/replay/workload interpretation must run off the ASGI
 event loop in the owning adapter.
+
+SDK #43 requires exact ReceiverNodeControlRequest/ReceiverNodeControlResultCodec
+inputs. Before reservation the codec's fallback request must equal the supplied
+request both as a value and by canonical digest, since Python identifies bool
+and number states that canonical bytes distinguish. Wrong-result correlation,
+normalization failure and oversized output publish the precomputed correlated
+failure without redispatch. The retained private JSON serializer has historical
+direct tests; production normalization now uses Core's canonical codec, so those
+serializer assertions alone do not prove the current terminal path's budget.

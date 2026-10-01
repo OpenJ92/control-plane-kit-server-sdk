@@ -28,7 +28,7 @@ class HealthDispatchTests(unittest.TestCase):
 
     def dispatcher(self, **changes):
         return WorkloadNodeHealthReadDispatcher(**{
-            "target": self.fixture.target, "runtime_id": self.fixture.runtime,
+            "target": self.fixture.target,
             "declaration": self.fixture.declaration, "verifier": self.fixture.verifier(),
             "liveness": self.live, "readiness": self.ready, **changes,
         })
@@ -40,7 +40,7 @@ class HealthDispatchTests(unittest.TestCase):
             return value
         for change in (
             {"readiness": None}, {"liveness": object()}, {"readiness": async_callback},
-            {"readiness": needs_argument}, {"runtime_id": self.fixture.target.node_id},
+            {"readiness": needs_argument}, {"target": self.fixture.target.node_id},
             {"target": replace(self.fixture.target, provider_socket_name=replace(
                 self.fixture.target.provider_socket_name, value="other",
             ))}, {"verifier": object()},
@@ -65,7 +65,7 @@ class HealthDispatchTests(unittest.TestCase):
     def test_admission_denial_precedes_callbacks_and_same_request_has_no_cache(self):
         dispatcher = self.dispatcher()
         request = self.fixture.request
-        foreign = replace(request, runtime_id=replace(request.runtime_id, value="other-runtime"))
+        foreign = replace(request, target=replace(request.target, runtime_id=replace(request.target.runtime_id, value="other-runtime")))
         for token in (
             self.fixture.token(private=self.fixture.other_private),
             self.fixture.token(self.fixture.grant(foreign)),
@@ -79,7 +79,7 @@ class HealthDispatchTests(unittest.TestCase):
         for outcome in core.NodeHealthReadOutcome:
             self.outcome = outcome
             result = dispatcher.read(self.fixture.token(), route_kind=request.kind, candidate=None)
-            self.assertIs(type(result), core.NodeHealthReadResult)
+            self.assertIs(type(result), core.ReceiverHealthReadResult)
             self.assertEqual(result.request, request)
             self.assertEqual(result.outcome, outcome)
             self.assertEqual(result.declaration, self.fixture.declaration)
