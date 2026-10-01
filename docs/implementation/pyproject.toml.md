@@ -2,7 +2,7 @@ Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
 SDK #41 selects accepted Core1877 merge
-6b2d173bccbab9f8cb4fa4c35fef60d2ca27aa0e, matching the exact dependency-preflight
+1f28d009069dcdabf44254e6d853815b6e00eda2, matching the exact dependency-preflight
 guard. Compared with the prior Core79c1a8b selection, only operations HTTP,
 projection and parity declarations change to expose the workload verifier read.
 SDK-consumed wrapper, control, health, key and route-template definitions are
