@@ -131,3 +131,90 @@ class ReceiverVerificationTests(unittest.TestCase):
         with self.assertRaises(_NodeControlReplayConflict):
             replay.execute(changed, result_codec=changed_codec, dispatch=dispatch)
         self.assertEqual(calls, [1])
+
+    def test_variable_only_wrapper_preserves_surface_and_local_commands(self):
+        self.fixture = ReceiverFixture(mixed=True, health=False)
+        variable = application.RecordingVariable("routing")
+        app = self.app(variables=(variable,))
+        async def exercise():
+            for kind in core.NodeControlSurfaceReadKind:
+                self.assertEqual((await self.call(app, self.fixture.surface_request(kind)))[0], 200)
+            for operation in core.NodeControlOperation:
+                request = self.fixture.command_request(operation)
+                code, _, body = await self.call(app, request)
+                self.assertEqual(code, 200)
+                result = core.ReceiverNodeControlResultCodec(request, self.fixture.declaration).decode(json.loads(body))
+                self.assertEqual(result.request_digest, request.canonical_digest())
+            self.assertEqual((variable.read_calls, variable.apply_calls), (1, 1))
+        asyncio.run(exercise())
+
+    def test_retry_authenticates_before_replay_and_changed_context_conflicts(self):
+        variable = application.RecordingVariable("routing")
+        app = self.app(variables=(variable,))
+        request = self.fixture.command_request(core.NodeControlOperation.APPLY_COMMAND)
+        async def exercise():
+            first = await self.call(app, request)
+            self.assertEqual(first[0], 200)
+            for token in (
+                self.fixture.token(request, private=ed25519.Ed25519PrivateKey.generate()),
+                self.fixture.token(request, grant_changes={"expires_at": 150}),
+                self.fixture.token(request, document_changes={"profile": "workload-node-control-grant.v1"}),
+            ):
+                self.assertEqual((await self.call(app, request, token=token))[0], 401)
+            self.assertEqual(await self.call(app, request), first)
+            changed = replace(request, authority_context=core.NodeControlAuthorityContext("graph-b", "projection-b"))
+            self.assertEqual((await self.call(app, changed))[0], 409)
+            self.assertEqual(variable.apply_calls, 1)
+        asyncio.run(exercise())
+
+    def test_replay_uses_canonical_correlation_when_python_equality_agrees(self):
+        request = self.fixture.command_request(core.NodeControlOperation.APPLY_COMMAND,
+            payload=core.NodeControlPayload(core.ControlPlaneCommandCodec.REPLACE_SCALAR_V1,
+                                            core.ScalarControlState(True)))
+        numeric = replace(request, payload=core.NodeControlPayload(
+            core.ControlPlaneCommandCodec.REPLACE_SCALAR_V1, core.ScalarControlState(1)))
+        self.assertEqual(request, numeric)
+        self.assertNotEqual(request.canonical_digest(), numeric.canonical_digest())
+        codec = core.ReceiverNodeControlResultCodec(request, self.fixture.declaration)
+        other_codec = core.ReceiverNodeControlResultCodec(numeric, self.fixture.declaration)
+        wrong = other_codec.result(core.NodeControlTransitionSucceeded(
+            numeric.request_id, 1, core.NodeControlEvidence(core.NodeControlEvidenceCode.APPLIED)))
+        replay = _ProcessLocalNodeControlReplay()
+        calls = []
+        def dispatch():
+            calls.append(1)
+            return wrong
+        with self.assertRaises(_NodeControlReplayContractError):
+            replay.execute(request, result_codec=other_codec, dispatch=dispatch)
+        self.assertEqual(calls, [])
+        self.assertEqual(replay._entries, {})
+        first = replay.execute(request, result_codec=codec, dispatch=dispatch)
+        second = replay.execute(request, result_codec=codec, dispatch=dispatch)
+        self.assertIs(type(first.outcome), core.NodeControlFailed)
+        self.assertEqual(first.request_digest, request.canonical_digest())
+        self.assertEqual(first, second)
+        self.assertEqual(calls, [1])
+        self.assertLessEqual(len(codec.encode_canonical_bytes(first)), 16_384)
+
+    def test_foreign_receiver_does_not_mask_command_binding_denial(self):
+        variable = application.RecordingVariable("routing")
+        app = self.app(variables=(variable,))
+        request = self.fixture.command_request(core.NodeControlOperation.APPLY_COMMAND,
+            target=replace(self.fixture.target, receiver_id="b" * 32))
+        async def exercise():
+            self.assertEqual((await self.call(app, request))[0], 403)
+            for changes in (
+                {"request_id": "other-request"},
+                {"idempotency_key": "other-key"},
+                {"command_codec": core.ControlPlaneCommandCodec.REPLACE_MAP_V1},
+                {"variable_name": replace(request.variable_name, value="other-variable")},
+                {"operation": core.NodeControlOperation.READ_STATE, "command_codec": None},
+            ):
+                with self.subTest(fields=tuple(changes)):
+                    token = self.fixture.token(request, grant_changes=changes)
+                    self.assertEqual((await self.call(app, request, token=token))[0], 401)
+            self.assertEqual(variable.apply_calls, 0)
+            local = replace(request, target=self.fixture.target)
+            self.assertEqual((await self.call(app, local))[0], 200)
+            self.assertEqual(variable.apply_calls, 1)
+        asyncio.run(exercise())

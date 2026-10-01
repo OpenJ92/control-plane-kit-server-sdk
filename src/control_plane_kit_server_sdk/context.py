@@ -4,20 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from control_plane_kit_core import NodeControlCommandRequest
+from control_plane_kit_core import ReceiverNodeControlRequest
 
 
 @dataclass(frozen=True, slots=True)
 class ControlPlaneInvocationContext:
     """Retain the exact request supplied by an outer admission adapter."""
 
-    request: NodeControlCommandRequest = field(repr=False)
+    request: ReceiverNodeControlRequest = field(repr=False)
 
     def __post_init__(self) -> None:
-        if type(self.request) is not NodeControlCommandRequest:
+        if type(self.request) is not ReceiverNodeControlRequest:
             raise TypeError(
                 "control-plane invocation request must be "
-                "NodeControlCommandRequest"
+                "ReceiverNodeControlRequest"
             )
 
 

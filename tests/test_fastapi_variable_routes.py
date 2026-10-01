@@ -18,7 +18,10 @@ import unittest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+from tests.receiver_values import receiver_context, receiver_declaration
+
 from control_plane_kit_core import (
+    DelegatedWorkloadReceiverNodeControlGrantProfile,
     ControlPlaneCommandCodec,
     ControlPlaneResultCodec,
     ControlPlaneStateCodec,
@@ -26,12 +29,12 @@ from control_plane_kit_core import (
     ControlPlaneVariableDescriptor,
     ControlPlaneVariableKind,
     ControlPlaneVariableOperationContract,
-    DelegatedWorkloadNodeControlGrant,
+    DelegatedWorkloadReceiverNodeControlGrant,
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
     DelegationPublicKey,
     MapControlState,
-    NodeControlCommandRequest,
+    ReceiverNodeControlRequest,
     NodeControlEvidence,
     NodeControlEvidenceCode,
     NodeControlFailed,
@@ -42,7 +45,8 @@ from control_plane_kit_core import (
     NodeControlReadStateSucceeded,
     NodeControlRejected,
     NodeControlResultCodec,
-    NodeControlTarget,
+    ReceiverNodeControlResultCodec,
+    NodeControlReceiverTarget,
     NodeControlTransitionSucceeded,
     ScalarControlState,
     WorkloadNodeControlSurfaceDeclaration,
@@ -89,14 +93,15 @@ def _reference(
     return NodeControlGraphReference(role, value)
 
 
-def _target(**changes: object) -> NodeControlTarget:
+def _target(**changes: object) -> NodeControlReceiverTarget:
     values: dict[str, object] = {
+        "receiver_id": "a" * 32,
         "workspace_id": _reference(
             NodeControlGraphReferenceRole.WORKSPACE,
             "workspace-1",
         ),
-        "graph_revision": _reference(
-            NodeControlGraphReferenceRole.GRAPH_REVISION,
+        "runtime_id": _reference(
+            NodeControlGraphReferenceRole.RUNTIME,
             "revision-7",
         ),
         "node_id": _reference(NodeControlGraphReferenceRole.NODE, "router"),
@@ -106,7 +111,7 @@ def _target(**changes: object) -> NodeControlTarget:
         ),
     }
     values.update(changes)
-    return NodeControlTarget(**values)
+    return NodeControlReceiverTarget(**values)
 
 
 def _descriptor(name: str = "routing") -> ControlPlaneVariableDescriptor:
@@ -144,14 +149,17 @@ def _declaration(*names: str) -> WorkloadNodeControlSurfaceDeclaration:
 def _request(
     operation: NodeControlOperation,
     *,
-    target: NodeControlTarget | None = None,
+    target: NodeControlReceiverTarget | None = None,
     variable: str = "routing",
     request_id: str = "request-1",
     key: str = "routing-change-1",
     value: str = "green",
-) -> NodeControlCommandRequest:
+    declaration: WorkloadNodeControlSurfaceDeclaration | None = None,
+) -> ReceiverNodeControlRequest:
     values: dict[str, object] = {
         "target": _target() if target is None else target,
+        "authority_context": receiver_context(),
+        "declaration_identity": (_declaration("routing") if declaration is None else declaration).identity(),
         "variable_name": _reference(
             NodeControlGraphReferenceRole.VARIABLE,
             variable,
@@ -169,19 +177,22 @@ def _request(
                 ScalarControlState(value),
             ),
         )
-    return NodeControlCommandRequest(**values)
+    return ReceiverNodeControlRequest(**values)
 
 
 def _grant(
-    request: NodeControlCommandRequest,
+    request: ReceiverNodeControlRequest,
     *,
     key_id: str = "workload-key-a",
-) -> DelegatedWorkloadNodeControlGrant:
-    return DelegatedWorkloadNodeControlGrant(
+) -> DelegatedWorkloadReceiverNodeControlGrant:
+    return DelegatedWorkloadReceiverNodeControlGrant(
+        profile=DelegatedWorkloadReceiverNodeControlGrantProfile.V2,
+        declaration_identity=request.declaration_identity,
         issuer=ISSUER,
         key_id=key_id,
         audience=AUDIENCE,
         target=request.target,
+        authority_context=request.authority_context,
         variable_name=request.variable_name,
         operation=request.operation,
         command_codec=request.command_codec,
@@ -210,7 +221,7 @@ def _b64url(value: bytes) -> bytes:
 
 def _token(
     private_key: ed25519.Ed25519PrivateKey,
-    request: NodeControlCommandRequest,
+    request: ReceiverNodeControlRequest,
 ) -> bytes:
     grant = _grant(request)
     header = {
@@ -233,8 +244,12 @@ def _token(
     return signing_input + b"." + _b64url(private_key.sign(signing_input))
 
 
-def _candidate(request: NodeControlCommandRequest) -> bytes:
+def _candidate(request: ReceiverNodeControlRequest) -> bytes:
     return _json_bytes(request.descriptor())
+
+
+def _result(request, outcome):
+    return ReceiverNodeControlResultCodec(request, _declaration("routing")).result(outcome)
 
 
 class RecordingVariable:
@@ -277,7 +292,7 @@ class RecordingVariable:
 
     def apply(
         self,
-        command: NodeControlCommandRequest,
+        command: ReceiverNodeControlRequest,
         context: ControlPlaneInvocationContext,
     ) -> object:
         self.assert_identity = command is context.request
@@ -364,7 +379,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
         self,
         variables: tuple[object, ...],
         *,
-        target: NodeControlTarget | None = None,
+        target: NodeControlReceiverTarget | None = None,
         declaration: WorkloadNodeControlSurfaceDeclaration | None = None,
         verifier: object | None = None,
         replay: object | None = None,
@@ -398,7 +413,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
 
     def _authorization(
         self,
-        request: NodeControlCommandRequest,
+        request: ReceiverNodeControlRequest,
     ) -> tuple[bytes, bytes]:
         return b"authorization", b"Bearer " + _token(self.private_key, request)
 
@@ -461,7 +476,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
     def _read(
         self,
         app,
-        request: NodeControlCommandRequest | None = None,
+        request: ReceiverNodeControlRequest | None = None,
         *,
         headers: list[tuple[bytes, bytes]] | None = None,
         chunks: tuple[bytes, ...] = (b"",),
@@ -479,7 +494,7 @@ class FastApiVariableRouteTests(unittest.TestCase):
     def _apply(
         self,
         app,
-        request: NodeControlCommandRequest | None = None,
+        request: ReceiverNodeControlRequest | None = None,
         *,
         headers: list[tuple[bytes, bytes]] | None = None,
         chunks: tuple[bytes, ...] | None = None,
@@ -578,7 +593,7 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         fastapi = importlib.import_module("fastapi")
         app = fastapi.FastAPI()
         app.router.routes.extend(routes)
-        request = _request(NodeControlOperation.READ_STATE, variable="alpha")
+        request = _request(NodeControlOperation.READ_STATE, variable="alpha", declaration=_declaration("alpha", "beta"))
         status, content, _ = self._read(app, request, variable="alpha")
         self.assertEqual(status, 200)
         self.assertEqual(content["request_id"], request.request_id)
@@ -623,12 +638,12 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         self.assertEqual(status, 200)
         self.assertEqual(
             content,
-            NodeControlReadStateSucceeded(
+            _result(read, NodeControlReadStateSucceeded(
                 read.request_id,
                 ControlPlaneStateCodec.SCALAR_V1,
                 4,
                 ScalarControlState("blue"),
-            ).descriptor(),
+            )).descriptor(),
         )
         self.assertEqual(body, _json_bytes(content))
         self.assertLessEqual(len(body), MAX_BODY_BYTES)
@@ -638,11 +653,11 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         self.assertEqual(status, 200)
         self.assertEqual(
             content,
-            NodeControlTransitionSucceeded(
+            _result(apply, NodeControlTransitionSucceeded(
                 apply.request_id,
                 5,
                 NodeControlEvidence(NodeControlEvidenceCode.APPLIED),
-            ).descriptor(),
+            )).descriptor(),
         )
         self.assertEqual(body, _json_bytes(content))
         self.assertLessEqual(len(body), MAX_BODY_BYTES)
@@ -686,8 +701,8 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
                 )
                 status, content, body = response
                 self.assertEqual(status, 200)
-                self.assertEqual(content, result.descriptor())
-                self.assertEqual(body, _json_bytes(result.descriptor()))
+                self.assertEqual(content, _result(request, result).descriptor())
+                self.assertEqual(body, _result(request, result).canonical_bytes())
 
     def test_invalid_result_and_variable_exception_are_closed(self) -> None:
         read = _request(NodeControlOperation.READ_STATE)
@@ -731,10 +746,10 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
                     ),
                     apply,
                 )
-                expected = NodeControlFailed(
+                expected = _result(apply, NodeControlFailed(
                     apply.request_id,
                     NodeControlOperation.APPLY_COMMAND,
-                ).descriptor()
+                )).descriptor()
                 self.assertEqual(status, 200)
                 self.assertEqual(content, expected)
                 self.assertEqual(body, _json_bytes(expected))
@@ -957,8 +972,8 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
             ),
             replace(
                 _target(),
-                graph_revision=_reference(
-                    NodeControlGraphReferenceRole.GRAPH_REVISION,
+                runtime_id=_reference(
+                    NodeControlGraphReferenceRole.RUNTIME,
                     "revision-8",
                 ),
             ),
@@ -1009,11 +1024,14 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         self.assertEqual(self._apply(app, local_apply)[0], 200)
         self.assertEqual(variable.apply_calls, 1)
 
+        declaration = _declaration("routing", "missing")
+        app = self._app(variable, declaration=declaration)
         for operation in NodeControlOperation:
             with self.subTest(operation=operation, precedence="missing"):
                 nonlocal_missing = _request(
                     operation,
                     target=substitutions[0],
+                    declaration=declaration,
                     variable="missing",
                     request_id=f"nonlocal-missing-{operation.value}",
                     key=f"nonlocal-missing-{operation.value}",
@@ -1027,6 +1045,7 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
 
                 local_missing = _request(
                     operation,
+                    declaration=declaration,
                     variable="missing",
                     request_id=f"local-missing-{operation.value}",
                     key=f"local-missing-{operation.value}",
@@ -1048,7 +1067,11 @@ for name in ("fastapi", "starlette", "anyio", "jwt", "cryptography"):
         self.assert_error(self._read(app, other, variable="routing"), 401)
 
         missing = _request(NodeControlOperation.READ_STATE, variable="missing")
-        self.assert_error(self._read(app, missing, variable="missing"), 404)
+        self.assert_error(self._read(app, missing, variable="missing"), 401)
+        declaration = _declaration("routing", "missing")
+        partial_app = self._app(variable, declaration=declaration)
+        missing = _request(NodeControlOperation.READ_STATE, variable="missing", declaration=declaration)
+        self.assert_error(self._read(partial_app, missing, variable="missing"), 404)
         self.assertEqual(variable.read_calls, 0)
 
     def test_apply_replay_converges_and_changed_intent_conflicts(self) -> None:

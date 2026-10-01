@@ -6,3 +6,10 @@ Six ASGI tests use the one public installer, actual signed health/static/command
 Denied signatures/locality/time/purpose, duplicate/missing/large headers, body/query/raw-path aliases and unknown kinds have callback counters zero. Router HEAD/redirect responses are distinguished from adapter-generated no-store results. Both health kinds and all four outcomes produce exact correlated Core bytes; repeated same requests invoke again without new identity. Invalid returns/ordinary exceptions are fixed500 and per-app target/callback state remains separate. A bounded Event schedule shows actual admission and callback on the worker thread while the event loop progresses.
 
 The helper sends in-process ASGI messages only and records headers/body. There is no listener, external network, provider or alternate runtime harness. Source tests do not prove live gateway routing, product health meaning or thread cancellation guarantees.
+
+SDK #43 translates installed context and credentials to receiver configuration,
+target/request/grant V2, health result V2 and surface result V3. Runtime is part
+of target; mixed command fixtures use the actual complete declaration identity.
+The existing callback, framing, lifecycle, host isolation and cleanup assertions
+remain governing. These are package boundary tests, not deployment acceptance
+or proof that a signed graph context remains current in Operations.

@@ -9,7 +9,7 @@ from control_plane_kit_core import (
     ControlPlaneStateCodec,
     ControlPlaneVariableDescriptor,
     MapControlState,
-    NodeControlCommandRequest,
+    ReceiverNodeControlRequest,
     NodeControlEvidence,
     NodeControlEvidenceCode,
     NodeControlFailed,
@@ -112,7 +112,7 @@ class AtomicControlPlaneVariable:
 
     def apply(
         self,
-        command: NodeControlCommandRequest,
+        command: ReceiverNodeControlRequest,
         context: ControlPlaneInvocationContext,
     ) -> NodeControlTransitionSucceeded | NodeControlRejected | NodeControlFailed:
         request = context.request

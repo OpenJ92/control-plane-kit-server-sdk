@@ -28,3 +28,11 @@ payload/lifetime constants. The earlier Core 95452249 adoption retained these te
 the original review is not a fresh audit of every test helper or
 transitive dependency. The repository's Docker-backed test.sh owns executable
 validation; no new test run accompanies this documentation.
+
+SDK #43 translates callbacks, codecs and expected copies to receiver result
+envelopes bound to each actual request/declaration. All outcome, reservation,
+concurrency, clock, capacity and failure assertions remain. Oversized canonical
+encoding still yields one bounded correlated failure and one dispatch; direct
+legacy serializer assertions are retained as helper evidence only. Additional
+receiver tests cover bool/number canonical divergence, wrong-codec zero
+reservation and wrong-result fallback without redispatch.

@@ -30,7 +30,7 @@ class FastApiHealthRouteTests(unittest.TestCase):
 
     def dispatcher(self, **changes):
         return WorkloadNodeHealthReadDispatcher(**{
-            "target": self.fixture.target, "runtime_id": self.fixture.runtime,
+            "target": self.fixture.target,
             "declaration": self.fixture.declaration, "verifier": self.fixture.verifier(),
             "liveness": self.observe, "readiness": self.observe, **changes,
         })
@@ -94,7 +94,7 @@ class FastApiHealthRouteTests(unittest.TestCase):
                 status, headers, body = asyncio.run(self.asgi(app, token=self.fixture.token(self.fixture.grant(request))))
                 self.assertEqual(status, 200)
                 self.assertEqual(headers[b"cache-control"], b"no-store")
-                self.assertEqual(core.NodeHealthReadResultCodec(request, declaration).decode(json.loads(body)).outcome,
+                self.assertEqual(core.ReceiverHealthReadResultCodec(request, declaration).decode(json.loads(body)).outcome,
                                  core.NodeHealthReadOutcome.HEALTHY)
                 before = len(self.calls)
                 for kind in core.NodeControlSurfaceReadKind:
@@ -103,7 +103,7 @@ class FastApiHealthRouteTests(unittest.TestCase):
                     path = "/__control/" + kind.value
                     status, _, body = asyncio.run(self.asgi(app, path=path, token=token))
                     self.assertEqual(status, 200)
-                    codec = core.NodeControlSurfaceReadResultCodec(surface_request, declaration)
+                    codec = core.ReceiverControlSurfaceReadResultCodec(surface_request, declaration)
                     expected = codec.capabilities_result() if kind is core.NodeControlSurfaceReadKind.CAPABILITIES else codec.status_result(
                         tuple(variable.descriptor().variable_name for variable in variables),
                     )
@@ -114,7 +114,7 @@ class FastApiHealthRouteTests(unittest.TestCase):
                 status, _, body = asyncio.run(self.asgi(app, path="/ordinary", headers=[]))
                 self.assertEqual((status, json.loads(body)), (200, {"message": "ordinary"}))
                 if mixed:
-                    command = legacy._command_request(core.NodeControlOperation.APPLY_COMMAND, target=self.fixture.target)
+                    command = legacy._command_request(core.NodeControlOperation.APPLY_COMMAND, target=self.fixture.target, declaration=declaration)
                     for _ in range(2):
                         code, _ = asyncio.run(self.old._command_call(app, command))
                         self.assertEqual(code, 200)
@@ -229,7 +229,7 @@ class FastApiHealthRouteTests(unittest.TestCase):
                     status, headers, body = asyncio.run(self.asgi(app, path=path, token=token))
                     self.assertEqual(status, 200)
                     self.assertEqual(headers[b"cache-control"], b"no-store")
-                    expected = core.NodeHealthReadResult(request, self.fixture.declaration, outcome)
+                    expected = core.ReceiverHealthReadResult(request, self.fixture.declaration, outcome)
                     self.assertEqual(body, expected.canonical_bytes())
                     self.assertLessEqual(len(body), 446)
         self.assertEqual(len(self.calls), 16)

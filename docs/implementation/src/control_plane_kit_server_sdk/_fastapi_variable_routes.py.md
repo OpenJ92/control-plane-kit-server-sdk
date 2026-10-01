@@ -19,15 +19,16 @@ belongs to the verifier after authentication.
 One explicit threadpool boundary covers synchronous verifier admission, exact
 trusted receiving-target equality, registry lookup, invocation-context creation,
 variable call/replay and result normalization. Thus a same-audience foreign
-target gets 403 before local variable existence is disclosed; a valid local
-missing variable gets 404. Every APPLY attempt authenticates before entering
+target gets 403 before local variable existence is disclosed; a declared local
+uninstalled variable gets 404; undeclared variables fail admission. Every APPLY attempt authenticates before entering
 the application-local [replay coordinator](_replay.py.md). READ has no replay.
 Workload apply may mutate caller-owned durable state; this adapter does not own
 that transaction or undo effects after a failed result.
 
 Result normalization in [_control_dispatch.py](_control_dispatch.py.md) uses
-consumer Core f1e6cf2's codec, exact operation result
-types, matching request ID/operation and compact ASCII JSON capped at 16 KiB.
+consumer Core 1f28d009 receiver codec, exact operation outcome types, matching
+request ID/operation/canonical digest and canonical JSON capped at 16 KiB for
+the complete result envelope.
 Valid Core rejection/failure remains an HTTP 200 nominal result. Transport,
 credential, locality, lookup, replay conflict/capacity and ordinary internal
 exceptions use the fixed status/code table. Private helper exception chains or
@@ -35,9 +36,13 @@ process-control BaseExceptions are not universally sanitized for arbitrary
 direct callers; HTTP responses omit their details.
 
 Both routes are excluded from OpenAPI. Their private builders are not an
-alternative public installer: [fastapi.py](fastapi.py.md) composes legacy four,
+alternative public installer: [fastapi.py](fastapi.py.md) composes variable-only four,
 health-only three or mixed five routes and enforces host collision/startup constraints. No provider client,
 graph authority, credential issuance or SDK persistence is added. See
 [variable-route tests](../../tests/test_fastapi_variable_routes.py.md).
 
 SDK #26 moves registry/result/interpretation to `_control_dispatch` and byte helpers to `_http_framing`; this adapter imports their one implementation. Streaming and the one off-loop handoff stay here. Existing private builders remain adapter composition, not public alternative installers.
+
+SDK #43 passes both independently installed receiver target and full declaration
+through the existing worker-thread boundary. The adapter retains all framing
+limits and creates no alternate verifier/result/replay owner.

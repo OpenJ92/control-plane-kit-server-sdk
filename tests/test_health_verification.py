@@ -31,6 +31,7 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
         self.runtime = core.NodeControlGraphReference(
             core.NodeControlGraphReferenceRole.RUNTIME, "runtime-a",
         )
+        self.target = replace(self.target, runtime_id=self.runtime)
         self.declaration = core.WorkloadNodeControlSurfaceDeclaration(
             core.WorkloadNodeControlSurfaceDescriptor(
                 self.target.provider_socket_name, (),
@@ -38,8 +39,8 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
             ),
             profile=core.WorkloadNodeControlSurfaceDeclarationProfile.V2,
         )
-        self.request = core.NodeHealthReadRequest(
-            self.target, self.runtime, core.NodeHealthReadKind.READINESS,
+        self.request = core.ReceiverHealthReadRequest(
+            self.target, core.NodeControlAuthorityContext("revision-7", "projection-7"), core.NodeHealthReadKind.READINESS,
             self.declaration.identity(), "health-observation-a",
         )
         self.holder = sdk.AtomicWorkloadNodeHealthReadVerifierKeySet(self.snapshot(self.key))
@@ -62,12 +63,12 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
 
     def grant(self, request=None, **changes):
         request = self.request if request is None else request
-        return core.DelegatedWorkloadNodeHealthReadGrant(**{
-            "profile": core.DelegatedWorkloadNodeHealthReadGrantProfile.V1,
+        return core.DelegatedWorkloadReceiverHealthReadGrant(**{
+            "profile": core.DelegatedWorkloadReceiverHealthReadGrantProfile.V2,
             "canonicalization": core.NodeControlCanonicalization.JCS_RFC8785_V1,
             "purpose": core.DelegationKeyPurpose.WORKLOAD_NODE_HEALTH_READ,
             "issuer": fixtures.ISSUER, "key_id": self.key.key_id, "audience": fixtures.AUDIENCE,
-            "target": request.target, "runtime_id": request.runtime_id, "kind": request.kind,
+            "target": request.target, "authority_context": request.authority_context, "kind": request.kind,
             "declaration_identity": request.declaration_identity,
             "request_id": request.request_id, "request_digest": request.canonical_digest(),
             "issued_at": 100, "not_before": 100, "expires_at": 200, "jti": "health-jti-a",
@@ -95,7 +96,7 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
     def admit(self, token, *, verifier=None, **changes):
         return (self.verifier() if verifier is None else verifier).admit(token, **{
             "route_kind": self.request.kind, "candidate": None,
-            "expected_target": self.target, "expected_runtime_id": self.runtime,
+            "expected_target": self.target,
             "expected_declaration": self.declaration, **changes,
         })
 
@@ -114,7 +115,7 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
             token = self.token(self.grant(request))
             for _ in range(2):
                 admitted = self.admit(token, route_kind=kind)
-                self.assertIs(type(admitted), core.NodeHealthReadRequest)
+                self.assertIs(type(admitted), core.ReceiverHealthReadRequest)
                 self.assertEqual(admitted, request)
                 self.assertEqual(admitted.canonical_bytes(), request.canonical_bytes())
         self.assertEqual(self.clock_calls, 4)
@@ -123,17 +124,19 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
 
     def test_real_maximum_signed_envelope_and_independent_framing_bounds(self):
         identifier = "a" * 128
-        target = core.NodeControlTarget(**{
+        target = replace(self.target, **{
             name: replace(getattr(self.target, name), value=identifier)
-            for name in ("workspace_id", "graph_revision", "node_id", "provider_socket_name")
+            for name in ("workspace_id", "runtime_id", "node_id", "provider_socket_name")
         })
         declaration = replace(self.declaration, surface=replace(
             self.declaration.surface, provider_socket_name=target.provider_socket_name,
         ))
         request = replace(
-            self.request, target=target, runtime_id=replace(self.runtime, value=identifier),
+            self.request, target=target,
+            authority_context=core.NodeControlAuthorityContext("a", "a" * 25),
             declaration_identity=declaration.identity(), request_id=identifier,
         )
+        self.assertEqual(len(request.canonical_bytes()), 1083)
         grant = self.grant(
             request, issuer="a" * 256, audience="a" * 256, key_id=identifier, jti=identifier,
             issued_at=2**53-301, not_before=2**53-301, expires_at=2**53-1,
@@ -151,7 +154,7 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
         self.assertEqual(len(token), 4178)
         self.assertEqual(self.admit(
             token, verifier=verifier, expected_target=target,
-            expected_runtime_id=request.runtime_id, expected_declaration=declaration,
+            expected_declaration=declaration,
         ), request)
 
         # Real signatures also admit bounded JSON whitespace at both segment ceilings.
@@ -263,13 +266,13 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
     def test_independent_local_context_route_and_bodyless_input_are_required(self):
         token = self.token()
         changes = [
-            {"expected_runtime_id": replace(self.runtime, value="other-runtime")},
+            {"expected_target": replace(self.target, receiver_id="b" * 32)},
             {"route_kind": core.NodeHealthReadKind.LIVENESS},
             {"expected_declaration": replace(self.declaration, surface=replace(
                 self.declaration.surface, health_reads=(core.NodeHealthReadKind.LIVENESS,),
             ))},
         ]
-        for field in ("workspace_id", "graph_revision", "node_id", "provider_socket_name"):
+        for field in ("workspace_id", "runtime_id", "node_id", "provider_socket_name"):
             changes.append({"expected_target": replace(self.target, **{
                 field: replace(getattr(self.target, field), value="other"),
             })})
@@ -281,7 +284,7 @@ class SignedHealthReadVerificationTests(unittest.TestCase):
             self.rejected(lambda: self.admit(token, candidate=candidate))
         for change in (
             {"route_kind": "readiness"}, {"expected_target": object()},
-            {"expected_runtime_id": self.target.node_id}, {"expected_declaration": object()},
+            {"expected_target": self.target.node_id}, {"expected_declaration": object()},
         ):
             self.rejected(lambda: self.admit(token, **change))
         self.assertEqual(self.clock_calls, before)

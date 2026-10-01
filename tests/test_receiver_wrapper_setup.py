@@ -8,6 +8,9 @@ import time
 import unittest
 
 import control_plane_kit_core as core
+from control_plane_kit_core.wrapper_configuration import (
+    WorkloadNodeControlConfiguration, WorkloadNodeControlConfigurationCodec,
+)
 from control_plane_kit_server_sdk import fastapi as sdk_fastapi, stdlib as sdk_stdlib
 from control_plane_kit_server_sdk.wrapper import load_wrapper_configuration, WrapperSetupError
 from tests.receiver_fixtures import ReceiverFixture
@@ -54,6 +57,23 @@ class ReceiverWrapperSetupTests(unittest.TestCase):
             with self.subTest(change=tuple(change)), self.fixture.delivered(json.dumps(document | change).encode()):
                 with self.assertRaises(WrapperSetupError):
                     load_wrapper_configuration()
+        historical_target = core.NodeControlTarget(
+            self.fixture.target.workspace_id,
+            core.NodeControlGraphReference(core.NodeControlGraphReferenceRole.GRAPH_REVISION, "graph-a"),
+            self.fixture.target.node_id, self.fixture.target.provider_socket_name)
+        historical = WorkloadNodeControlConfiguration(
+            historical_target, self.fixture.target.runtime_id,
+            self.fixture.declaration, self.fixture.configuration.verifiers)
+        historical_codec = WorkloadNodeControlConfigurationCodec()
+        raw = historical_codec.encode_bytes(historical)
+        self.assertEqual(historical_codec.decode_bytes(raw), historical)
+        with self.fixture.delivered(raw), self.assertRaises(WrapperSetupError):
+            load_wrapper_configuration()
+        app = application.FastApiControlRouteTests()._app()
+        prior = app.router.routes
+        with self.assertRaises(WrapperSetupError):
+            sdk_fastapi.install_cpk_wrapper(app, configuration=historical)
+        self.assertIs(app.router.routes, prior)
 
     def test_same_installed_receiver_accepts_two_contexts_with_exact_health_results(self):
         async def exercise():

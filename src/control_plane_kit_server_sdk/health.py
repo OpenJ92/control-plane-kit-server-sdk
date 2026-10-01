@@ -7,12 +7,10 @@ from types import CoroutineType
 from typing import Callable
 
 from control_plane_kit_core import (
-    NodeControlGraphReference,
-    NodeControlGraphReferenceRole,
-    NodeControlTarget,
+    NodeControlReceiverTarget,
     NodeHealthReadKind,
     NodeHealthReadOutcome,
-    NodeHealthReadResult,
+    ReceiverHealthReadResult,
     WorkloadNodeControlSurfaceDeclaration,
     WorkloadNodeControlSurfaceDeclarationProfile,
 )
@@ -40,8 +38,7 @@ def _require_sync_callback(callback: object) -> None:
 class WorkloadNodeHealthReadDispatcher:
     """Capture trusted local composition and admit before each protected read."""
 
-    target: NodeControlTarget = field(repr=False)
-    runtime_id: NodeControlGraphReference = field(repr=False)
+    target: NodeControlReceiverTarget = field(repr=False)
     declaration: WorkloadNodeControlSurfaceDeclaration = field(repr=False)
     verifier: Ed25519WorkloadNodeHealthReadVerifier = field(repr=False)
     liveness: Callable[[], NodeHealthReadOutcome] | None = field(default=None, repr=False)
@@ -51,9 +48,7 @@ class WorkloadNodeHealthReadDispatcher:
         accepted = False
         try:
             if (
-                type(self.target) is not NodeControlTarget
-                or type(self.runtime_id) is not NodeControlGraphReference
-                or self.runtime_id.role is not NodeControlGraphReferenceRole.RUNTIME
+                type(self.target) is not NodeControlReceiverTarget
                 or type(self.declaration) is not WorkloadNodeControlSurfaceDeclaration
                 or self.declaration.profile is not WorkloadNodeControlSurfaceDeclarationProfile.V2
                 or type(self.verifier) is not Ed25519WorkloadNodeHealthReadVerifier
@@ -76,10 +71,10 @@ class WorkloadNodeHealthReadDispatcher:
 
     def read(
         self, credential: bytes, *, route_kind: NodeHealthReadKind, candidate: None,
-    ) -> NodeHealthReadResult:
+    ) -> ReceiverHealthReadResult:
         request = self.verifier.admit(
             credential, route_kind=route_kind, candidate=candidate,
-            expected_target=self.target, expected_runtime_id=self.runtime_id,
+            expected_target=self.target,
             expected_declaration=self.declaration,
         )
         try:
@@ -91,7 +86,7 @@ class WorkloadNodeHealthReadDispatcher:
                 if type(outcome) is CoroutineType:
                     outcome.close()
                 raise TypeError
-            return NodeHealthReadResult(request, self.declaration, outcome)
+            return ReceiverHealthReadResult(request, self.declaration, outcome)
         except Exception:
             pass
         raise WorkloadNodeHealthReadDispatchError("workload health read failed")

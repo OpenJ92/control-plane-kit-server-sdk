@@ -14,28 +14,31 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
+from tests.receiver_values import receiver_context, receiver_declaration
+
 from control_plane_kit_core import (
+    NodeControlAuthorityContext, DelegatedWorkloadReceiverNodeControlGrantProfile,
     ControlPlaneCommandCodec,
     ControlPlaneTransitionPrecondition,
-    DelegatedWorkloadNodeControlGrant,
-    DelegatedWorkloadNodeControlSurfaceReadGrant,
-    DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
-    DelegatedWorkloadNodeControlSurfaceReadGrantProfile,
+    DelegatedWorkloadReceiverNodeControlGrant,
+    DelegatedWorkloadReceiverControlSurfaceReadGrant,
+    DelegatedWorkloadReceiverControlSurfaceReadGrantCodec,
+    DelegatedWorkloadReceiverControlSurfaceReadGrantProfile,
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
     DelegationPublicKey,
     NodeControlCanonicalization,
-    NodeControlCommandRequest,
-    NodeControlCommandRequestCodec,
+    ReceiverNodeControlRequest,
+    ReceiverNodeControlRequestCodec,
     NodeControlGraphReference,
     NodeControlGraphReferenceRole,
     NodeControlOperation,
     NodeControlPayload,
-    NodeControlRequestDigest,
+    ReceiverNodeControlRequestDigest,
     NodeControlSurfaceReadKind,
-    NodeControlSurfaceReadRequest,
-    NodeControlSurfaceReadRequestDigest,
-    NodeControlTarget,
+    ReceiverControlSurfaceReadRequest,
+    ReceiverControlSurfaceReadRequestDigest,
+    NodeControlReceiverTarget,
     ScalarControlState,
     WorkloadNodeControlSurfaceDeclarationIdentity,
 )
@@ -180,11 +183,12 @@ def _reference(
     return NodeControlGraphReference(role, value)
 
 
-def _target(**changes: object) -> NodeControlTarget:
+def _target(**changes: object) -> NodeControlReceiverTarget:
     values: dict[str, object] = {
+        "receiver_id": "a" * 32,
         "workspace_id": _reference(NodeControlGraphReferenceRole.WORKSPACE, "workspace-1"),
-        "graph_revision": _reference(
-            NodeControlGraphReferenceRole.GRAPH_REVISION,
+        "runtime_id": _reference(
+            NodeControlGraphReferenceRole.RUNTIME,
             "revision-7",
         ),
         "node_id": _reference(NodeControlGraphReferenceRole.NODE, "router"),
@@ -194,7 +198,7 @@ def _target(**changes: object) -> NodeControlTarget:
         ),
     }
     values.update(changes)
-    return NodeControlTarget(**values)
+    return NodeControlReceiverTarget(**values)
 
 
 def _variable(value: str = "routing") -> NodeControlGraphReference:
@@ -204,9 +208,11 @@ def _variable(value: str = "routing") -> NodeControlGraphReference:
 def _request(
     operation: NodeControlOperation = NodeControlOperation.APPLY_COMMAND,
     **changes: object,
-) -> NodeControlCommandRequest:
+) -> ReceiverNodeControlRequest:
     values: dict[str, object] = {
         "target": _target(),
+        "authority_context": receiver_context(),
+        "declaration_identity": receiver_declaration().identity(),
         "variable_name": _variable(),
         "operation": operation,
         "request_id": "request-1",
@@ -222,20 +228,23 @@ def _request(
             ),
         )
     values.update(changes)
-    return NodeControlCommandRequest(**values)
+    return ReceiverNodeControlRequest(**values)
 
 
 def _grant(
-    request: NodeControlCommandRequest,
+    request: ReceiverNodeControlRequest,
     *,
     key_id: str = "workload-key-a",
     **changes: object,
-) -> DelegatedWorkloadNodeControlGrant:
+) -> DelegatedWorkloadReceiverNodeControlGrant:
     values: dict[str, object] = {
+        "profile": DelegatedWorkloadReceiverNodeControlGrantProfile.V2,
+        "declaration_identity": request.declaration_identity,
         "issuer": ISSUER,
         "key_id": key_id,
         "audience": AUDIENCE,
         "target": request.target,
+        "authority_context": request.authority_context,
         "variable_name": request.variable_name,
         "operation": request.operation,
         "command_codec": request.command_codec,
@@ -248,11 +257,11 @@ def _grant(
         "jti": "grant-1",
     }
     values.update(changes)
-    return DelegatedWorkloadNodeControlGrant(**values)
+    return DelegatedWorkloadReceiverNodeControlGrant(**values)
 
 
 def _payload(grant_value: object, **changes: object) -> dict[str, object]:
-    if isinstance(grant_value, DelegatedWorkloadNodeControlGrant):
+    if isinstance(grant_value, DelegatedWorkloadReceiverNodeControlGrant):
         grant_descriptor: object = grant_value.descriptor()
         values: dict[str, object] = {
             "iss": grant_value.issuer,
@@ -305,7 +314,7 @@ def _signed_compact(
 
 def _token(
     private_key: ed25519.Ed25519PrivateKey,
-    grant: DelegatedWorkloadNodeControlGrant,
+    grant: DelegatedWorkloadReceiverNodeControlGrant,
     *,
     header_changes: dict[str, object] | None = None,
     payload_changes: dict[str, object] | None = None,
@@ -319,40 +328,40 @@ def _token(
     )
 
 
-def _candidate(request: NodeControlCommandRequest) -> bytes:
+def _candidate(request: ReceiverNodeControlRequest) -> bytes:
     return _json_value(request.descriptor())
 
 
 def _surface_request(
     kind: NodeControlSurfaceReadKind = NodeControlSurfaceReadKind.CAPABILITIES,
     **changes: object,
-) -> NodeControlSurfaceReadRequest:
+) -> ReceiverControlSurfaceReadRequest:
     values: dict[str, object] = {
         "target": _target(),
+        "authority_context": receiver_context(),
         "kind": kind,
-        "declaration_identity": WorkloadNodeControlSurfaceDeclarationIdentity(
-            "d" * 64
-        ),
+        "declaration_identity": receiver_declaration().identity(),
         "request_id": "surface-read-1",
     }
     values.update(changes)
-    return NodeControlSurfaceReadRequest(**values)
+    return ReceiverControlSurfaceReadRequest(**values)
 
 
 def _surface_grant(
-    request: NodeControlSurfaceReadRequest,
+    request: ReceiverControlSurfaceReadRequest,
     *,
     key_id: str = "surface-key-a",
     **changes: object,
-) -> DelegatedWorkloadNodeControlSurfaceReadGrant:
+) -> DelegatedWorkloadReceiverControlSurfaceReadGrant:
     values: dict[str, object] = {
-        "profile": DelegatedWorkloadNodeControlSurfaceReadGrantProfile.V1,
+        "profile": DelegatedWorkloadReceiverControlSurfaceReadGrantProfile.V2,
         "canonicalization": NodeControlCanonicalization.JCS_RFC8785_V1,
         "purpose": DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
         "issuer": ISSUER,
         "key_id": key_id,
         "audience": AUDIENCE,
         "target": request.target,
+        "authority_context": request.authority_context,
         "kind": request.kind,
         "declaration_identity": request.declaration_identity,
         "request_id": request.request_id,
@@ -363,14 +372,14 @@ def _surface_grant(
         "jti": "surface-grant-1",
     }
     values.update(changes)
-    return DelegatedWorkloadNodeControlSurfaceReadGrant(**values)
+    return DelegatedWorkloadReceiverControlSurfaceReadGrant(**values)
 
 
 def _surface_payload(
     grant_value: object,
     **changes: object,
 ) -> dict[str, object]:
-    if isinstance(grant_value, DelegatedWorkloadNodeControlSurfaceReadGrant):
+    if isinstance(grant_value, DelegatedWorkloadReceiverControlSurfaceReadGrant):
         values: dict[str, object] = {
             "iss": grant_value.issuer,
             "aud": grant_value.audience,
@@ -409,7 +418,7 @@ def _surface_header(
 
 def _surface_token(
     private_key: ed25519.Ed25519PrivateKey,
-    grant: DelegatedWorkloadNodeControlSurfaceReadGrant,
+    grant: DelegatedWorkloadReceiverControlSurfaceReadGrant,
     *,
     header_changes: dict[str, object] | None = None,
     payload_changes: dict[str, object] | None = None,
@@ -481,13 +490,15 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
     def _admit(
         self,
         token: bytes,
-        request: NodeControlCommandRequest,
+        request: ReceiverNodeControlRequest,
         *,
         verifier=None,
         route_operation: NodeControlOperation | None = None,
         route_variable: NodeControlGraphReference | None = None,
         candidate: object = ...,
-    ) -> NodeControlCommandRequest:
+        expected_target=None,
+        expected_declaration=None,
+    ) -> ReceiverNodeControlRequest:
         selected_candidate = (
             (None if request.operation is NodeControlOperation.READ_STATE else _candidate(request))
             if candidate is ...
@@ -498,6 +509,8 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
             route_operation=request.operation if route_operation is None else route_operation,
             route_variable=request.variable_name if route_variable is None else route_variable,
             candidate=selected_candidate,
+            expected_target=_target() if expected_target is None else expected_target,
+            expected_declaration=receiver_declaration() if expected_declaration is None else expected_declaration,
         )
 
     def _assert_rejected(self, operation) -> BaseException:
@@ -535,7 +548,7 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
             raise AssertionError("candidate decoder was reached")
 
         with _replaced_attribute(jwt, "decode", forbidden_jwt), _replaced_attribute(
-            NodeControlCommandRequestCodec,
+            ReceiverNodeControlRequestCodec,
             "decode",
             forbidden_candidate,
         ):
@@ -630,10 +643,10 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
             with self.subTest(operation=request.operation):
                 token = _token(self.private_a, _grant(request))
                 admitted = self._admit(token, request)
-                self.assertIs(type(admitted), NodeControlCommandRequest)
+                self.assertIs(type(admitted), ReceiverNodeControlRequest)
                 self.assertEqual(admitted, request)
                 self.assertEqual(
-                    NodeControlCommandRequestCodec().decode(admitted.descriptor()),
+                    ReceiverNodeControlRequestCodec().decode(admitted.descriptor()),
                     request,
                 )
                 self.assertEqual(admitted.canonical_digest(), request.canonical_digest())
@@ -783,7 +796,7 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
         request = _request()
         grant = _grant(request)
         target_descriptor = grant.target.descriptor()
-        for key in ("workspace_id", "graph_revision", "node_id", "provider_socket_name"):
+        for key in ("workspace_id", "runtime_id", "node_id", "provider_socket_name"):
             with self.subTest(target_key=key):
                 raw_target = _raw_object(_duplicate_pair(target_descriptor, key))
                 grant_pairs = [
@@ -977,7 +990,7 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
                     raise AssertionError("candidate decoder was reached")
 
                 with _replaced_attribute(
-                    NodeControlCommandRequestCodec,
+                    ReceiverNodeControlRequestCodec,
                     "decode",
                     forbidden_candidate,
                 ):
@@ -1012,7 +1025,7 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
                     raise AssertionError("candidate decoder was reached")
 
                 with _replaced_attribute(
-                    NodeControlCommandRequestCodec,
+                    ReceiverNodeControlRequestCodec,
                     "decode",
                     forbidden_candidate,
                 ):
@@ -1121,7 +1134,7 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
         request = _request()
         target_changes = (
             {"workspace_id": _reference(NodeControlGraphReferenceRole.WORKSPACE, "workspace-2")},
-            {"graph_revision": _reference(NodeControlGraphReferenceRole.GRAPH_REVISION, "revision-8")},
+            {"runtime_id": _reference(NodeControlGraphReferenceRole.RUNTIME, "revision-8")},
             {"node_id": _reference(NodeControlGraphReferenceRole.NODE, "router-2")},
             {"provider_socket_name": _reference(NodeControlGraphReferenceRole.PROVIDER_SOCKET, "control-2")},
         )
@@ -1139,7 +1152,7 @@ class SignedWorkloadVerificationTests(unittest.TestCase):
                 _grant(request, command_codec=ControlPlaneCommandCodec.REPLACE_MAP_V1),
                 _grant(request, request_id="request-2"),
                 _grant(request, idempotency_key="routing-change-2"),
-                _grant(request, request_digest=NodeControlRequestDigest("0" * 64)),
+                _grant(request, request_digest=ReceiverNodeControlRequestDigest("0" * 64)),
             )
         )
         for identity, grant in enumerate(grants):
@@ -1492,16 +1505,20 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
     def _admit(
         self,
         token: object,
-        request: NodeControlSurfaceReadRequest,
+        request: ReceiverControlSurfaceReadRequest,
         *,
         verifier=None,
         route_kind: object = _UNSET,
         candidate: object = None,
-    ) -> NodeControlSurfaceReadRequest:
+        expected_target=None,
+        expected_declaration=None,
+    ) -> ReceiverControlSurfaceReadRequest:
         return (verifier or self._verifier()).admit(
             token,
             route_kind=request.kind if route_kind is _UNSET else route_kind,
             candidate=candidate,
+            expected_target=_target() if expected_target is None else expected_target,
+            expected_declaration=receiver_declaration() if expected_declaration is None else expected_declaration,
         )
 
     def _assert_rejected(self, operation) -> BaseException:
@@ -1526,7 +1543,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
     def _assert_before_maintained_admission(
         self,
         token: object,
-        request: NodeControlSurfaceReadRequest,
+        request: ReceiverControlSurfaceReadRequest,
         *,
         route_kind: object = _UNSET,
         candidate: object = None,
@@ -1553,7 +1570,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         holder = self._holder(self.key_a)
         verifier = self._verifier(holder=holder, clock=forbidden_clock)
         with _replaced_attribute(jwt, "decode", forbidden_jwt), _replaced_attribute(
-            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            DelegatedWorkloadReceiverControlSurfaceReadGrantCodec,
             "decode",
             forbidden_grant,
         ), _replaced_attribute(holder_type, "snapshot", forbidden_snapshot):
@@ -1645,7 +1662,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                 request = _surface_request(kind)
                 token = _surface_token(self.private_a, _surface_grant(request))
                 admitted = self._admit(token, request)
-                self.assertIs(type(admitted), NodeControlSurfaceReadRequest)
+                self.assertIs(type(admitted), ReceiverControlSurfaceReadRequest)
                 self.assertEqual(admitted, request)
                 self.assertIsNot(admitted, request)
                 self.assertEqual(admitted.canonical_bytes(), request.canonical_bytes())
@@ -1684,13 +1701,14 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
 
     def test_maximum_valid_credential_and_every_independent_bound(self) -> None:
         maximum_text = lambda first, tail, size: first + tail * (size - 1)
-        target = NodeControlTarget(
+        target = NodeControlReceiverTarget(
+            receiver_id=_target().receiver_id,
             workspace_id=_reference(
                 NodeControlGraphReferenceRole.WORKSPACE,
                 maximum_text("W", "w", 128),
             ),
-            graph_revision=_reference(
-                NodeControlGraphReferenceRole.GRAPH_REVISION,
+            runtime_id=_reference(
+                NodeControlGraphReferenceRole.RUNTIME,
                 maximum_text("G", "g", 128),
             ),
             node_id=_reference(
@@ -1702,13 +1720,14 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                 maximum_text("S", "s", 128),
             ),
         )
+        declaration = receiver_declaration(socket=target.provider_socket_name.value)
         request = _surface_request(
             target=target,
-            declaration_identity=WorkloadNodeControlSurfaceDeclarationIdentity(
-                "f" * 64
-            ),
-            request_id=maximum_text("R", "r", 128),
+            authority_context=NodeControlAuthorityContext("a", "a"),
+            declaration_identity=declaration.identity(),
+            request_id=maximum_text("R", "r", 8),
         )
+        self.assertEqual(len(request.canonical_bytes()), 951)
         private_key = ed25519.Ed25519PrivateKey.generate()
         key_id = maximum_text("k", "k", 128)
         key = DelegationPublicKey(
@@ -1727,6 +1746,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             expires_at=maximum_epoch,
             jti=maximum_text("J", "j", 128),
         )
+        self.assertEqual(len(grant.canonical_bytes()), 1984)
         token = _surface_token(private_key, grant)
         segments = token.split(b".")
 
@@ -1742,7 +1762,8 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             audience=grant.audience,
             clock=lambda: maximum_epoch - 1,
         )
-        self.assertEqual(self._admit(token, request, verifier=verifier), request)
+        self.assertEqual(self._admit(token, request, verifier=verifier,
+            expected_target=target, expected_declaration=declaration), request)
 
         edge_request = _surface_request()
         edge_grant = _surface_grant(edge_request)
@@ -2119,6 +2140,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
         with self.assertRaises(self._module().WorkloadNodeControlVerificationError):
             command_verifier.admit(
                 _surface_token(shared_private, surface_grant),
+                expected_target=_target(), expected_declaration=receiver_declaration(),
                 route_operation=command_request.operation,
                 route_variable=command_request.variable_name,
                 candidate=None,
@@ -2192,7 +2214,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                 counted_decode,
             ), _replaced_attribute(
                 verification_module,
-                "NodeControlSurfaceReadRequest",
+                "ReceiverControlSurfaceReadRequest",
                 forbidden_request,
             ):
                 self._assert_rejected(
@@ -2322,7 +2344,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             header_changes={"kid": "unknown-key"},
         )
         with _replaced_attribute(jwt, "decode", counted_jwt), _replaced_attribute(
-            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            DelegatedWorkloadReceiverControlSurfaceReadGrantCodec,
             "decode",
             counted_grant,
         ):
@@ -2345,7 +2367,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             return original_decode(*args, **kwargs)
 
         with _replaced_attribute(jwt, "decode", failing_jwt), _replaced_attribute(
-            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            DelegatedWorkloadReceiverControlSurfaceReadGrantCodec,
             "decode",
             counted_grant,
         ):
@@ -2426,8 +2448,8 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
                 )
             ),
             _target(
-                graph_revision=_reference(
-                    NodeControlGraphReferenceRole.GRAPH_REVISION,
+                runtime_id=_reference(
+                    NodeControlGraphReferenceRole.RUNTIME,
                     "other-revision",
                 )
             ),
@@ -2456,7 +2478,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             _surface_grant(request, request_id="other-request"),
             _surface_grant(
                 request,
-                request_digest=NodeControlSurfaceReadRequestDigest("0" * 64),
+                request_digest=ReceiverControlSurfaceReadRequestDigest("0" * 64),
             ),
         )
         for identity, grant in enumerate(mismatches):
@@ -2616,7 +2638,7 @@ class SignedSurfaceReadVerificationTests(unittest.TestCase):
             raise RuntimeError("credential=grant-secret target=router")
 
         with _replaced_attribute(
-            DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+            DelegatedWorkloadReceiverControlSurfaceReadGrantCodec,
             "decode",
             failing_grant,
         ):

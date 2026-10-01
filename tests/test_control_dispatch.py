@@ -25,7 +25,7 @@ class PreparedControlDispatchTests(unittest.TestCase):
 
         def arguments(declaration, variables, command_verifier):
             dispatcher = WorkloadNodeHealthReadDispatcher(
-                target=fixture.target, runtime_id=fixture.runtime,
+                target=fixture.target,
                 declaration=declaration, verifier=fixture.verifier(),
                 liveness=observe, readiness=observe,
             )

@@ -24,3 +24,8 @@ history, replay guarantee, idempotency ledger or provider authority. Read/apply
 results are existing Core values; outer adapters own authentication and target
 admission. The [tests](../../tests/test_atomic_variable.py.md) exercise local
 thread interleavings, not distributed concurrency or database isolation.
+
+SDK #43 adopts exact ReceiverNodeControlRequest from the selected Core 1f28d009
+contracts. The application still returns the existing outcome algebra. Exact
+command/context object identity, atomic state algorithms and domain-owned
+transactions remain unchanged; outer dispatch owns receiver result envelopes.

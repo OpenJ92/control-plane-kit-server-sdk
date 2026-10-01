@@ -58,7 +58,7 @@ class StdlibControlTests(unittest.TestCase):
         dispatcher = None
         if declaration.profile is core.WorkloadNodeControlSurfaceDeclarationProfile.V2:
             dispatcher = WorkloadNodeHealthReadDispatcher(
-                target=target, runtime_id=self.fixture.runtime, declaration=declaration,
+                target=target, declaration=declaration,
                 verifier=self.fixture.verifier(), liveness=self.observe,
                 readiness=self.observe if callback is None else callback,
             )
@@ -198,7 +198,7 @@ class StdlibControlTests(unittest.TestCase):
                             server, target=b"/__control/health/" + kind.value.encode(), token=token,
                             version=b"HTTP/1.0" if kind is core.NodeHealthReadKind.LIVENESS else b"HTTP/1.1"))
                         self.assertEqual(status, 200)
-                        self.assertEqual(body, core.NodeHealthReadResult(
+                        self.assertEqual(body, core.ReceiverHealthReadResult(
                             request, self.fixture.declaration, outcome).canonical_bytes())
             self.assertEqual(len(self.calls), 16)
             for kind in core.NodeControlSurfaceReadKind:
@@ -207,7 +207,7 @@ class StdlibControlTests(unittest.TestCase):
                 status, body = self.response(self.request(server, token=token,
                                           target=b"/__control/" + kind.value.encode()))
                 self.assertEqual(status, 200)
-                codec = core.NodeControlSurfaceReadResultCodec(request, self.fixture.declaration)
+                codec = core.ReceiverControlSurfaceReadResultCodec(request, self.fixture.declaration)
                 expected = codec.capabilities_result() if kind is core.NodeControlSurfaceReadKind.CAPABILITIES else codec.status_result(())
                 self.assertEqual(body, expected.canonical_bytes())
                 self.assertEqual(self.response(self.request(server, target=b"/__control/" + kind.value.encode()))[0], 401)
@@ -226,7 +226,7 @@ class StdlibControlTests(unittest.TestCase):
                               variables=(variable,), command=self.old._command_verifier())) as (server, _):
                 self.assertEqual(variable.descriptor_calls, 1)
                 for operation in core.NodeControlOperation:
-                    request = legacy._command_request(operation, target=self.fixture.target)
+                    request = legacy._command_request(operation, target=self.fixture.target, declaration=declaration)
                     token = legacy._command_token(self.old.command_private, request)
                     body = legacy._json_bytes(request.descriptor()) if operation is core.NodeControlOperation.APPLY_COMMAND else b""
                     for _ in range(2):
@@ -241,7 +241,7 @@ class StdlibControlTests(unittest.TestCase):
                 self.assertEqual(server.application_calls, [])
 
     def test_raw_denials_are_terminal_nonlogging_and_precede_all_callbacks(self):
-        foreign = replace(self.fixture.request, runtime_id=replace(self.fixture.runtime, value="other"))
+        foreign = replace(self.fixture.request, target=replace(self.fixture.target, runtime_id=replace(self.fixture.runtime, value="other")))
         nested = b"%5f%5fcontrol"
         for _ in range(17):
             nested = nested.replace(b"%", b"%25")

@@ -8,15 +8,17 @@ from pathlib import Path
 from typing import get_type_hints
 import unittest
 
-from control_plane_kit_core.node_control import (
+from tests.receiver_values import receiver_context, receiver_declaration
+
+from control_plane_kit_core import (
     ControlPlaneCommandCodec,
     ControlPlaneTransitionPrecondition,
-    NodeControlCommandRequest,
+    ReceiverNodeControlRequest,
     NodeControlGraphReference,
     NodeControlGraphReferenceRole,
     NodeControlOperation,
     NodeControlPayload,
-    NodeControlTarget,
+    NodeControlReceiverTarget,
     ScalarControlState,
 )
 
@@ -27,12 +29,12 @@ CONTEXT_MODULE = "control_plane_kit_server_sdk.context"
 
 
 class RequestLookalike:
-    def __init__(self, request: NodeControlCommandRequest) -> None:
+    def __init__(self, request: ReceiverNodeControlRequest) -> None:
         self.request_id = request.request_id
         self.target = request.target
 
 
-class RequestSubclass(NodeControlCommandRequest):
+class RequestSubclass(ReceiverNodeControlRequest):
     pass
 
 
@@ -68,14 +70,15 @@ class InvocationContextTests(unittest.TestCase):
     ) -> NodeControlGraphReference:
         return NodeControlGraphReference(role, value)
 
-    def _target(self) -> NodeControlTarget:
-        return NodeControlTarget(
+    def _target(self) -> NodeControlReceiverTarget:
+        return NodeControlReceiverTarget(
+            receiver_id="a" * 32,
             workspace_id=self._reference(
                 NodeControlGraphReferenceRole.WORKSPACE,
                 "workspace-1",
             ),
-            graph_revision=self._reference(
-                NodeControlGraphReferenceRole.GRAPH_REVISION,
+            runtime_id=self._reference(
+                NodeControlGraphReferenceRole.RUNTIME,
                 "revision-7",
             ),
             node_id=self._reference(NodeControlGraphReferenceRole.NODE, "router"),
@@ -85,8 +88,10 @@ class InvocationContextTests(unittest.TestCase):
             ),
         )
 
-    def _read_request(self) -> NodeControlCommandRequest:
-        return NodeControlCommandRequest(
+    def _read_request(self) -> ReceiverNodeControlRequest:
+        return ReceiverNodeControlRequest(
+            authority_context=receiver_context(),
+            declaration_identity=receiver_declaration().identity(),
             target=self._target(),
             variable_name=self._reference(
                 NodeControlGraphReferenceRole.VARIABLE,
@@ -97,8 +102,10 @@ class InvocationContextTests(unittest.TestCase):
             idempotency_key="routing-read-1",
         )
 
-    def _apply_request(self) -> NodeControlCommandRequest:
-        return NodeControlCommandRequest(
+    def _apply_request(self) -> ReceiverNodeControlRequest:
+        return ReceiverNodeControlRequest(
+            authority_context=receiver_context(),
+            declaration_identity=receiver_declaration().identity(),
             target=self._target(),
             variable_name=self._reference(
                 NodeControlGraphReferenceRole.VARIABLE,
@@ -129,6 +136,8 @@ class InvocationContextTests(unittest.TestCase):
         request = self._read_request()
         subclass = RequestSubclass(
             target=request.target,
+            authority_context=request.authority_context,
+            declaration_identity=request.declaration_identity,
             variable_name=request.variable_name,
             operation=request.operation,
             request_id=request.request_id,
@@ -140,7 +149,7 @@ class InvocationContextTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     TypeError,
                     "^control-plane invocation request must be "
-                    "NodeControlCommandRequest$",
+                    "ReceiverNodeControlRequest$",
                 ):
                     context_type(candidate)
 
@@ -154,7 +163,7 @@ class InvocationContextTests(unittest.TestCase):
                 self.assertEqual(
                     str(raised.exception),
                     "control-plane invocation request must be "
-                    "NodeControlCommandRequest",
+                    "ReceiverNodeControlRequest",
                 )
                 self.assertNotIn("candidate-secret", str(raised.exception))
 
@@ -173,7 +182,7 @@ class InvocationContextTests(unittest.TestCase):
         )
         self.assertIs(
             get_type_hints(context_type)["request"],
-            NodeControlCommandRequest,
+            ReceiverNodeControlRequest,
         )
         with self.assertRaises((FrozenInstanceError, TypeError, AttributeError)):
             context.request = self._read_request()

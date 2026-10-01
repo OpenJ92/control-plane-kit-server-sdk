@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute, APIRouter, APIWebSocketRoute
 from starlette.routing import Host, Mount, Route, WebSocketRoute
 
 from control_plane_kit_core import (
-    NodeControlTarget,
+    NodeControlReceiverTarget,
     WorkloadNodeControlSurfaceDeclaration,
 )
 from control_plane_kit_core.control_routes import NODE_CONTROL_ROUTES, NODE_HEALTH_ROUTES
@@ -121,7 +121,8 @@ def _prepare_installation(
     variable_routes = ()
     if has_variables:
         variable_routes = _build_variable_routes_from_registry(
-            target=control.target, registry=control.registry, verifier=control.command_verifier,
+            target=control.target, declaration=control.declaration,
+            registry=control.registry, verifier=control.command_verifier,
             replay=control.replay,
         )
     health_routes = _build_health_routes(dispatcher=control.health_dispatcher) if has_health else ()
@@ -136,7 +137,7 @@ def _prepare_installation(
 def install_cpk_control_routes(
     app: fastapi.FastAPI,
     *,
-    target: NodeControlTarget,
+    target: NodeControlReceiverTarget,
     declaration: WorkloadNodeControlSurfaceDeclaration,
     variables: tuple[object, ...] = (),
     command_verifier: Ed25519WorkloadNodeControlVerifier | None = None,

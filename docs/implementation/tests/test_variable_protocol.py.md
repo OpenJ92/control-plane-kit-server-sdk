@@ -12,3 +12,8 @@ commit count unchanged. Those fake transaction facts do not establish real
 database durability. Other assertions check protocol shape, the typing marker
 and decision wording. [protocol.py](../src/control_plane_kit_server_sdk/protocol.py.md)
 owns the extension contract; actual domain implementations own persistence.
+
+SDK #43 uses ReceiverNodeControlRequest, receiver target, independent authority
+context and declaration identity fixtures. Type/variance expectations follow
+the successor request; equal-but-distinct identity denial and all application
+state assertions remain unchanged. Outcome codecs retain the existing algebra.

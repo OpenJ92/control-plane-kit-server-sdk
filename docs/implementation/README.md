@@ -54,3 +54,10 @@ Interpret historical decisions by their named boundary and verify current
 source before treating deferral text as current implementation status. This is
 a documentation discrepancy to preserve in issue/PR handoff, not authority to
 change security or execution rules.
+
+SDK #43 migrates the existing live receiver stack to Core 1f28d009's receiver
+configuration/requests/grants and correlated results. Touched owner companions
+record the source changes and fixture translations. Historical decisions and
+prior acceptance coordinates remain provenance; README and current owners state
+the supported transport matrix. O3/controller command delivery is outside this
+SDK change. PR #44 owns candidate gate/review evidence.

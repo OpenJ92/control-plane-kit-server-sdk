@@ -13,12 +13,14 @@ from control_plane_kit_core import (
     NodeControlReadStateSucceeded,
     NodeControlRejected,
     NodeControlResultCodec,
-    NodeControlTarget,
+    ReceiverNodeControlResult,
+    ReceiverNodeControlResultCodec,
+    NodeControlReceiverTarget,
     NodeControlTransitionSucceeded,
     WorkloadNodeControlSurfaceDeclaration,
     WorkloadNodeControlSurfaceDeclarationProfile,
     NodeControlSurfaceReadKind,
-    NodeControlSurfaceReadResultCodec,
+    ReceiverControlSurfaceReadResultCodec,
 )
 from control_plane_kit_core.node_control import MAX_NODE_CONTROL_PAYLOAD_BYTES
 from control_plane_kit_server_sdk._replay import (
@@ -32,6 +34,7 @@ from control_plane_kit_server_sdk.verification import (
     Ed25519WorkloadNodeControlSurfaceReadVerifier,
     WorkloadNodeControlSurfaceReadVerificationError,
     WorkloadNodeControlVerificationError,
+    _AuthenticatedLocalityError,
 )
 from control_plane_kit_server_sdk._http_framing import _ERROR_BODIES
 from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
@@ -44,7 +47,7 @@ _APPLY_RESULTS = (NodeControlTransitionSucceeded, NodeControlRejected, NodeContr
 class _PreparedControlDispatch:
     """One installation's trusted receiving context; not a public protocol."""
 
-    target: NodeControlTarget = field(repr=False)
+    target: NodeControlReceiverTarget = field(repr=False)
     declaration: WorkloadNodeControlSurfaceDeclaration = field(repr=False)
     registry: dict[str, tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec]] = field(repr=False)
     installed_variable_names: tuple[NodeControlGraphReference, ...] = field(repr=False)
@@ -60,15 +63,15 @@ def _validate_control_configuration(
 ) -> tuple[bool, bool]:
     """Validate without invoking descriptors, before host collision checks."""
     if (
-        type(target) is not NodeControlTarget
+        type(target) is not NodeControlReceiverTarget
         or type(declaration) is not WorkloadNodeControlSurfaceDeclaration
         or type(variables) is not tuple
         or type(surface_read_verifier) is not Ed25519WorkloadNodeControlSurfaceReadVerifier
         or target.provider_socket_name != declaration.surface.provider_socket_name
     ):
         raise ValueError
-    has_health = declaration.profile is WorkloadNodeControlSurfaceDeclarationProfile.V2
-    has_variables = not has_health or bool(declaration.surface.variables)
+    has_health = bool(declaration.surface.health_reads)
+    has_variables = bool(declaration.surface.variables)
     if has_health:
         if (
             type(health_dispatcher) is not WorkloadNodeHealthReadDispatcher
@@ -87,7 +90,7 @@ def _validate_control_configuration(
 
 
 def _prepare_control_dispatch(
-    *, target: NodeControlTarget, declaration: WorkloadNodeControlSurfaceDeclaration,
+    *, target: NodeControlReceiverTarget, declaration: WorkloadNodeControlSurfaceDeclaration,
     variables: tuple[object, ...], command_verifier: Ed25519WorkloadNodeControlVerifier | None,
     surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,
     health_dispatcher: WorkloadNodeHealthReadDispatcher | None,
@@ -114,21 +117,15 @@ def _compact_result(
     *,
     request_id: str,
     operation: NodeControlOperation,
-    codec: NodeControlResultCodec,
+    codec: ReceiverNodeControlResultCodec,
 ) -> bytes:
     allowed = _READ_RESULTS if operation is NodeControlOperation.READ_STATE else _APPLY_RESULTS
-    if type(result) not in allowed:
+    if type(result) is not ReceiverNodeControlResult or type(result.outcome) not in allowed:
         raise ValueError
     normalized = codec.decode(codec.encode(result))
     if normalized.request_id != request_id or normalized.operation is not operation:
         raise ValueError
-    encoded = json.dumps(
-        normalized.descriptor(),
-        ensure_ascii=True,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("ascii", errors="strict")
+    encoded = codec.encode_canonical_bytes(normalized)
     if not 1 <= len(encoded) <= MAX_NODE_CONTROL_PAYLOAD_BYTES:
         raise ValueError
     return encoded
@@ -140,7 +137,8 @@ def _interpret_variable(
     candidate: bytes | None,
     route_operation: NodeControlOperation,
     route_variable: NodeControlGraphReference,
-    target: NodeControlTarget,
+    target: NodeControlReceiverTarget,
+    declaration: WorkloadNodeControlSurfaceDeclaration,
     registry: dict[
         str,
         tuple[object, ControlPlaneVariableDescriptor, NodeControlResultCodec],
@@ -154,7 +152,11 @@ def _interpret_variable(
             route_operation=route_operation,
             route_variable=route_variable,
             candidate=candidate,
+            expected_target=target,
+            expected_declaration=declaration,
         )
+    except _AuthenticatedLocalityError:
+        return 403, _ERROR_BODIES[403]
     except WorkloadNodeControlVerificationError:
         return 401, _ERROR_BODIES[401]
     except Exception:
@@ -166,16 +168,17 @@ def _interpret_variable(
     registered = registry.get(route_variable.value)
     if registered is None:
         return 404, _ERROR_BODIES[404]
-    variable, descriptor, codec = registered
+    variable, descriptor, _outcome_codec = registered
     context = ControlPlaneInvocationContext(command)
     try:
+        codec = ReceiverNodeControlResultCodec(command, declaration)
         if route_operation is NodeControlOperation.READ_STATE:
-            result = variable.read(context)
+            result = codec.result(variable.read(context))
         else:
             result = replay.execute(
                 command,
                 result_codec=codec,
-                dispatch=lambda: variable.apply(command, context),
+                dispatch=lambda: codec.result(variable.apply(command, context)),
             )
         body = _compact_result(
             result,
@@ -238,7 +241,7 @@ def _interpret_surface_read(
     *,
     credential: bytes,
     route_kind: NodeControlSurfaceReadKind,
-    target: NodeControlTarget,
+    target: NodeControlReceiverTarget,
     declaration: WorkloadNodeControlSurfaceDeclaration,
     installed_variable_names: tuple[NodeControlGraphReference, ...],
     verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,
@@ -248,7 +251,11 @@ def _interpret_surface_read(
             credential,
             route_kind=route_kind,
             candidate=None,
+            expected_target=target,
+            expected_declaration=declaration,
         )
+    except _AuthenticatedLocalityError:
+        return 403, _ERROR_BODIES[403]
     except WorkloadNodeControlSurfaceReadVerificationError:
         return 401, _ERROR_BODIES[401]
     except Exception:
@@ -261,7 +268,7 @@ def _interpret_surface_read(
         return 403, _ERROR_BODIES[403]
 
     try:
-        codec = NodeControlSurfaceReadResultCodec(request, declaration)
+        codec = ReceiverControlSurfaceReadResultCodec(request, declaration)
         if route_kind is NodeControlSurfaceReadKind.CAPABILITIES:
             result = codec.capabilities_result()
         else:
