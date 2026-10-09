@@ -69,3 +69,16 @@ Dependency/preflight/foundation coordinates and pin-bearing companions are
 updated together. Existing foundation/preflight test companions reflect the new
 coordinate with no behavioral change. The ordinary pinned gate owns adoption evidence;
 Secrets43 waits for the actual accepted SDK merge.
+
+SDK #47 starts from accepted develop
+`5dc93b92c27bb9bbe2af027f945a347e5e4131bc` and selects accepted Core
+`da17efb1303ed2176374548dd998d19a655055bf`. The exact Core source delta adds
+configuration instance/invocation contracts and updates approval, planning and
+runtime-effect owners. The SDK's imported receiver, wrapper, health, key and
+route contracts and Core root exports are unchanged. Active metadata,
+preflight, test and companion pins move together; historical coordinates above
+remain provenance. SDK source, direct extras and the owning gate are unchanged.
+Pinned base/verification/FastAPI installation and package evidence belong in the
+PR. Secrets45 needs the actual accepted SDK47 merge, not this branch or Core's
+merge alone; Interpreters180 follows. No I177 replacement/cleanup or live
+capability is established by this adoption.

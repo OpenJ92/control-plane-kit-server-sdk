@@ -1,14 +1,14 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-SDK #45 selects accepted Core1916 merge
-250d65e19dc748ebe840f705be77eb732dab3cb3, matching the exact dependency-preflight
-guard. Since the prior SDK43 selection, Core production changes only its
-gateway transit advertisement to the sole canonical receiver-health protocol.
-SDK-consumed receiver, wrapper, health, key and route-template definitions are
-unchanged; this SDK has no direct gateway-advertisement consumer. Its ordinary
-pinned suite must establish adoption and import isolation. Accepted SDK45 then
-provides the coordinate for Secrets43, followed by Interpreters175/Servers237.
+SDK #47 selects accepted configuration-lifecycle Core merge
+da17efb1303ed2176374548dd998d19a655055bf, matching the exact dependency-preflight
+guard. Since SDK45's Core250d65e1 selection, Core adds configuration instance
+and invocation contracts and changes approval, planning and runtime-effect
+owners. SDK-consumed receiver, wrapper, health, key and route-template
+definitions and root exports are unchanged. The ordinary pinned suite must
+establish adoption and import isolation. Accepted SDK47 supplies the coordinate
+for Secrets45, followed by Interpreters180; it does not implement I177 effects.
 SDK runtime behavior is unchanged. Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
 fastapi0.141.1/starlette1.6.0. Version0.1.0, Python floor, package discovery,
