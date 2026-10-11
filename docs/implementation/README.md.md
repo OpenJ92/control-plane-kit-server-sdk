@@ -3,7 +3,7 @@ Maintain this companion alongside its source.
 
 The installation example names the immutable Core archive selected by
 pyproject.toml and the exact dependency-preflight guard. Servers #237's bounded
-alignment checkpoint advances that coordinate to accepted common Core `ba0bd45e`;
+alignment checkpoint advances that coordinate to accepted Core #1969 `a3f21206`;
 public SDK setup, framework extras, runtime
 behavior and publication status remain unchanged. Existing foundation tests
 check the documented coordinate. Documentation alone does not prove a clean

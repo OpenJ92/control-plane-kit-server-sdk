@@ -1,15 +1,15 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-Servers #237's bounded alignment checkpoint selects common accepted Core
-`ba0bd45e7fa7673b837366f7f5da5f9159b0dee8`, matching the exact dependency-preflight
-guard. Since the prior SDK47 selection `da17efb`, Core adds managed-update
-planning, receiver-management routes and installation receipts, with additive
-root exports. SDK-consumed receiver, wrapper, health, key and route-template
-definitions are unchanged. The ordinary pinned suite must establish adoption
-and import isolation. The accepted SDK merge supplies SDK* for the subsequent
-Secrets alignment; Interpreters #186 produces receipts afterward. This pin does
-not add receipt production, SDK behavior or full Servers #237 acceptance.
+Servers #237's declared-slot alignment selects accepted Core #1969
+`a3f212063b0eb83f08599fc729c05c473aa5a1ef`, matching the exact dependency-preflight
+guard. Since the prior selection `ba0bd45e`, Core adds the structural declared
+slot selector and its root export. The strict actual V2 configuration codec and
+all SDK-consumed contracts are unchanged. The SDK wrapper continues to decode
+actual material strictly; it does not consume the new declared-slot selector.
+The ordinary pinned suite must establish adoption and import isolation. The
+accepted SDK merge supplies SDK* for subsequent Secrets and Interpreters pins.
+This pin does not add SDK behavior or complete Servers #237 acceptance.
 SDK runtime behavior is unchanged. Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
 fastapi0.141.1/starlette1.6.0. Version0.1.0, Python floor, package discovery,
