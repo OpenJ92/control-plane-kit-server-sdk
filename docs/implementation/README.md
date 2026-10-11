@@ -97,3 +97,15 @@ Secrets pin must select the actual accepted SDK* together with this C*.
 Interpreters #186 and Servers #245 remain later owners. No receipt production,
 full #237 completion, dependency override, package/image publication or provider
 mutation is implied by the metadata update.
+
+The next Servers #237 alignment starts from accepted SDK develop
+`23500b1445dc6a748bd92a441e781d7f9ed90299` and selects accepted Core #1969
+`a3f212063b0eb83f08599fc729c05c473aa5a1ef`. Against the prior `ba0bd45e`
+selection, Core adds only a structural declared-slot selector and root export.
+The SDK wrapper's actual V2 decoder and other imported contracts are unchanged;
+SDK source, extras and the owning gate remain unchanged. Metadata, exact pin
+assertions and current companions move together. Prior coordinates above remain
+historical evidence. The owning pinned Docker gate and independent review must
+establish package adoption before Secrets selects the accepted SDK merge.
+This supplies dependency alignment for the Operations declared/actual split;
+it does not prove Servers #237 runtime acceptance or the live grandparent test.
