@@ -82,3 +82,18 @@ Pinned base/verification/FastAPI installation and package evidence belong in the
 PR. Secrets45 needs the actual accepted SDK47 merge, not this branch or Core's
 merge alone; Interpreters180 follows. No I177 replacement/cleanup or live
 capability is established by this adoption.
+
+Servers #237's shared-contract alignment checkpoint starts from accepted SDK
+develop `447a3c4c5a20b5c56402c813f6cfde1685eefda0` and selects common Core
+`ba0bd45e7fa7673b837366f7f5da5f9159b0dee8`. Compared with SDK47's `da17efb`
+selection, Core changes planning compiler/management compiler and their exports,
+and adds receiver-management routes and installation receipts. Existing
+SDK-consumed receiver, wrapper, health, key and route definitions are unchanged;
+Core root additions still require ordinary installed import-isolation evidence.
+The live SDK source, extras and owning `test.sh` remain unchanged. Only metadata,
+exact-coordinate preflight/foundation expectations and current pin-bearing
+companions move; historical coordinates above remain provenance. The next
+Secrets pin must select the actual accepted SDK* together with this C*.
+Interpreters #186 and Servers #245 remain later owners. No receipt production,
+full #237 completion, dependency override, package/image publication or provider
+mutation is implied by the metadata update.
