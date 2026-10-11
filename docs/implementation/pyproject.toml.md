@@ -1,14 +1,15 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-SDK #47 selects accepted configuration-lifecycle Core merge
-da17efb1303ed2176374548dd998d19a655055bf, matching the exact dependency-preflight
-guard. Since SDK45's Core250d65e1 selection, Core adds configuration instance
-and invocation contracts and changes approval, planning and runtime-effect
-owners. SDK-consumed receiver, wrapper, health, key and route-template
-definitions and root exports are unchanged. The ordinary pinned suite must
-establish adoption and import isolation. Accepted SDK47 supplies the coordinate
-for Secrets45, followed by Interpreters180; it does not implement I177 effects.
+Servers #237's bounded alignment checkpoint selects common accepted Core
+`ba0bd45e7fa7673b837366f7f5da5f9159b0dee8`, matching the exact dependency-preflight
+guard. Since the prior SDK47 selection `da17efb`, Core adds managed-update
+planning, receiver-management routes and installation receipts, with additive
+root exports. SDK-consumed receiver, wrapper, health, key and route-template
+definitions are unchanged. The ordinary pinned suite must establish adoption
+and import isolation. The accepted SDK merge supplies SDK* for the subsequent
+Secrets alignment; Interpreters #186 produces receipts afterward. This pin does
+not add receipt production, SDK behavior or full Servers #237 acceptance.
 SDK runtime behavior is unchanged. Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
 fastapi0.141.1/starlette1.6.0. Version0.1.0, Python floor, package discovery,
