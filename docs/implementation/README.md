@@ -109,3 +109,16 @@ historical evidence. The owning pinned Docker gate and independent review must
 establish package adoption before Secrets selects the accepted SDK merge.
 This supplies dependency alignment for the Operations declared/actual split;
 it does not prove Servers #237 runtime acceptance or the live grandparent test.
+
+Servers #249's retained-update alignment starts from accepted SDK develop
+`f1bc730a7b244d7a713eb4a6531a5fb5fb76eee0` and selects accepted Core/O1 #1981
+`fe8d44fa09eed7d0d3df70f7782203f3045f9c15`. Against `a3f21206`, Core changes
+the managed-update compiler and adjacent export formatting; SDK-consumed receiver,
+wrapper, health, key and route definitions remain unchanged. No SDK source/test
+caller uses the removed content-only compiler. Runtime source, extras and owning
+gate are unchanged. Metadata, exact preflight/foundation assertions and current
+pin-bearing companions move together. Historical coordinates remain provenance.
+The ordinary hosted pinned gate owns adoption evidence; Secrets must consume
+the accepted SDK merge before Interpreter and Servers adoption. This dependency
+step creates no new runtime, authority, credential or provider surface and does
+not prove the later S1 process replacement.
