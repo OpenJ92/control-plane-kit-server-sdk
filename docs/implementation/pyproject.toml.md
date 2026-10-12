@@ -1,12 +1,12 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-Servers #237's declared-slot alignment selects accepted Core #1969
-`a3f212063b0eb83f08599fc729c05c473aa5a1ef`, matching the exact dependency-preflight
-guard. Since the prior selection `ba0bd45e`, Core adds the structural declared
-slot selector and its root export. The strict actual V2 configuration codec and
-all SDK-consumed contracts are unchanged. The SDK wrapper continues to decode
-actual material strictly; it does not consume the new declared-slot selector.
+Servers #249's retained-update alignment selects accepted Core/O1 #1981
+`fe8d44fa09eed7d0d3df70f7782203f3045f9c15`, matching the exact dependency-preflight
+guard. Since the prior selection `a3f21206`, Core expands its common managed-update
+compiler to retained public JSON content changes. The receiver, wrapper, health,
+key and route contracts consumed by the SDK are unchanged. No SDK caller uses
+the superseded content-only compiler removed within the upstream vertical.
 The ordinary pinned suite must establish adoption and import isolation. The
 accepted SDK merge supplies SDK* for subsequent Secrets and Interpreters pins.
 This pin does not add SDK behavior or complete Servers #237 acceptance.
