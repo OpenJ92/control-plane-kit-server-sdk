@@ -122,3 +122,15 @@ The ordinary hosted pinned gate owns adoption evidence; Secrets must consume
 the accepted SDK merge before Interpreter and Servers adoption. This dependency
 step creates no new runtime, authority, credential or provider surface and does
 not prove the later S1 process replacement.
+
+SDK #52 / Servers #251's image-update alignment starts from accepted SDK develop
+`a35e3a50b0beb6043284847a2dde4f7eaa2f945c` and selects accepted Core
+`05b5f28a624e6e03f1dadbe6ad77ece2bec09601`. Against `fe8d44fa`, only Core's
+managed-update compiler production module changes, adding the closed image
+transition. SDK-consumed receiver/wrapper/health/key/route/receipt contracts are
+unchanged; SDK production source does not import that compiler. Runtime source,
+extras and owning gate remain unchanged. Metadata, exact preflight/foundation
+assertions and current companions move together; historical coordinates above
+remain provenance. The ordinary pinned gate and independent exact-head review
+must pass before North accepts the SDK successor for Secrets. This does not
+publish a package/image, authorize provider effects or accept Servers #251.
