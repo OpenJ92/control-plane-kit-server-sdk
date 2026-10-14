@@ -16,7 +16,7 @@ PACKAGE_ROOT = SOURCE_ROOT / "control_plane_kit_server_sdk"
 CORE_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "fe8d44fa09eed7d0d3df70f7782203f3045f9c15.zip"
+    "05b5f28a624e6e03f1dadbe6ad77ece2bec09601.zip"
     "#subdirectory=control-plane-kit-core"
 )
 VERIFICATION_DEPENDENCIES = [
@@ -176,7 +176,7 @@ for name in (
             "pip install .",
             "control_plane_kit_server_sdk",
             "__version__",
-            "fe8d44fa09eed7d0d3df70f7782203f3045f9c15",
+            "05b5f28a624e6e03f1dadbe6ad77ece2bec09601",
             "not published",
         ):
             with self.subTest(required=required):
