@@ -147,3 +147,16 @@ owning pinned Docker gate must prove installation and import compatibility.
 Secrets must adopt the actual accepted SDK merge and the same Core before
 Interpreters #190/#191 can assemble their package dependencies. This is a
 compatibility prerequisite, not secret-recipient or live deployment evidence.
+
+SDK #56 starts from accepted develop
+`ad0582937d7e41f1e7a41295fa1de58c2ce4cba2` and selects accepted Core #1991
+`5b66dcac4bf2cf76219efaf05fa5ff06588bd16a`. The exact production delta from
+`87e231c6` changes only `planning/management_compiler.py`; SDK production code
+does not import this compiler. Receiver, wrapper, health, key and route
+contracts consumed by the SDK are unchanged. Metadata, dependency preflight,
+positive/negative coordinate expectations and current pin-bearing companions
+move together. Historical coordinates above remain provenance. No runtime
+source, extras or gate changes. The ordinary pinned Docker gate must establish
+compatibility and import isolation; Secrets #54 uses the actual accepted SDK
+merge, then Interpreters #201 and Servers #252 adopt the coherent tuple. No
+provider effects, installation receipts or live acceptance follow from this pin.
