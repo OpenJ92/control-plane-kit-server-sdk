@@ -1,15 +1,15 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-SDK #52 selects accepted Core/Operations #1973
-`05b5f28a624e6e03f1dadbe6ad77ece2bec09601`, matching the exact dependency-preflight
-guard. Since the prior selection `fe8d44fa`, the only Core production change is
-the managed-update compiler's closed immutable-image transition. The receiver,
+The selected-secret dependency alignment selects accepted Core/Operations #1988
+`87e231c661879e44816ba71ff9320c040c868d60`, matching the exact dependency-preflight
+guard. Since the prior selection `05b5f28a`, Core adds selected-secret contracts
+and updates planning and runtime representation. The receiver,
 wrapper, health, key, route and receipt contracts consumed by the SDK are
 unchanged. SDK production source does not import that planning compiler.
 The ordinary pinned suite must establish adoption and import isolation. The
 accepted SDK merge supplies SDK* for subsequent Secrets and Interpreters pins.
-This pin does not add SDK behavior or complete Servers #251/#237 acceptance.
+This pin does not add SDK behavior or complete Interpreters #190/#191 or Servers #237 acceptance.
 SDK runtime behavior is unchanged. Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
 fastapi0.141.1/starlette1.6.0. Version0.1.0, Python floor, package discovery,

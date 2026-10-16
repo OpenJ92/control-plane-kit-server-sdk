@@ -134,3 +134,16 @@ assertions and current companions move together; historical coordinates above
 remain provenance. The ordinary pinned gate and independent exact-head review
 must pass before North accepts the SDK successor for Secrets. This does not
 publish a package/image, authorize provider effects or accept Servers #251.
+
+The selected-secret alignment starts from accepted SDK develop
+`9aa01ef7b2df6106f6ad87c1625a7feb93394b88` and selects Core/Operations #1988
+`87e231c661879e44816ba71ff9320c040c868d60`. Core adds secret selections,
+consumer grants and installation receipts with planning/runtime integration.
+The SDK-consumed receiver, wrapper, health and key contracts remain unchanged;
+production SDK source does not consume the new secret installation contracts.
+Exact metadata, preflight, positive/negative expectations and current companions
+move together. Historical coordinates above remain provenance. The unchanged
+owning pinned Docker gate must prove installation and import compatibility.
+Secrets must adopt the actual accepted SDK merge and the same Core before
+Interpreters #190/#191 can assemble their package dependencies. This is a
+compatibility prerequisite, not secret-recipient or live deployment evidence.
