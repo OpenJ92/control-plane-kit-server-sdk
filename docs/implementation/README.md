@@ -175,3 +175,16 @@ The normal pinned Docker gate must prove adoption and import isolation;
 Secrets #56 then consumes the actual accepted SDK commit, followed by
 Interpreters #203 and Servers #253. No installed refresh, producer authority,
 key lifecycle, image publication or live grandparent acceptance is implied.
+
+SDK #60 starts from accepted develop `e289d6939b7e6432ffa5181789b0600bf8e3ffe2`
+and selects accepted Core `9861e536e79314005499ae07379f627bfb1599a2` for Servers
+#254. Since the previous `012a7b8b` selection, the only Core production delta is
+`planning/management_compiler.py`, adding the coupled health declaration/route
+transition. SDK production source does not import that compiler; consumed
+receiver, wrapper, grant and key contracts and root exports remain unchanged.
+Metadata, exact preflight/foundation expectations and current pin-bearing
+companions move together. Existing assertions, runtime code, optional extras
+and owning gate remain unchanged. Normal pinned package evidence proves SDK
+adoption/import isolation; Secrets #58 then selects the actual accepted SDK
+merge, followed by Interpreters #205 and Servers #254. This does not prove
+installed declaration cutover, publish an image, or accept the grandparent run.
