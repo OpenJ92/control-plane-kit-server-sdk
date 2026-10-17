@@ -160,3 +160,18 @@ source, extras or gate changes. The ordinary pinned Docker gate must establish
 compatibility and import isolation; Secrets #54 uses the actual accepted SDK
 merge, then Interpreters #201 and Servers #252 adopt the coherent tuple. No
 provider effects, installation receipts or live acceptance follow from this pin.
+
+SDK #58 starts from accepted develop
+`d4cbbb16a4ce47bae0b791adab5de8940355ea99` and selects accepted Core/Operations
+`012a7b8b7cc153cbf17b1a62513fab747eaad782` for Servers #253. Since the prior
+`5b66dcac` selection, the only Core production delta is
+`planning/management_compiler.py`: the closed retained-verifier refresh relation.
+SDK source does not import that compiler; its receiver, wrapper, health, key
+and route contracts and root exports are unchanged. Metadata, exact preflight
+and foundation expectations, README and current pin-bearing companions move
+together. Existing positive/negative assertions, runtime source, extras and
+owning gate are unchanged. Historical coordinates above remain provenance.
+The normal pinned Docker gate must prove adoption and import isolation;
+Secrets #56 then consumes the actual accepted SDK commit, followed by
+Interpreters #203 and Servers #253. No installed refresh, producer authority,
+key lifecycle, image publication or live grandparent acceptance is implied.
