@@ -188,3 +188,17 @@ and owning gate remain unchanged. Normal pinned package evidence proves SDK
 adoption/import isolation; Secrets #58 then selects the actual accepted SDK
 merge, followed by Interpreters #205 and Servers #254. This does not prove
 installed declaration cutover, publish an image, or accept the grandparent run.
+
+SDK #62 starts from accepted develop `d4e7c4d91c054f139e2971774ae5e37fc741262d`
+and selects accepted Core #2005 merge `73d87e99bf711ff8a88112ca56c5eee8055ac5b7`.
+Since `9861e536`, Core changes topology secret-selection carry-forward and
+extracts the existing pure health-declaration relation into receiver
+configuration for planner reuse. The SDK wrapper loads and decodes through the
+unchanged receiver value/codec; it does not call the new private relation or
+secret-selection authoring. Signed admission contracts and root exports remain
+unchanged. Runtime code, extras and the ordinary pinned gate are unchanged;
+metadata, preflight/foundation expectations and current companions move together.
+The owning gate must prove installed SDK compatibility before Secrets adopts
+the actual accepted SDK merge. The already qualified Hello image keeps its
+historical SDK/Core provenance and requires no republication. Servers #254's
+coupled runtime proof remains a later boundary.
