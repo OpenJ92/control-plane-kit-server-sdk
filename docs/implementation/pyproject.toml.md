@@ -1,17 +1,17 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-SDK #62's selected-secret declaration compatibility alignment selects accepted Core/Operations
-`73d87e99bf711ff8a88112ca56c5eee8055ac5b7`, matching the exact dependency-preflight
-guard. Since the prior selection `9861e536`, Core changes secret-selection
-carry-forward and extracts the existing pure health-declaration relation into
-receiver_configuration.py for reuse by the planner. The SDK consumes that
-module's unchanged receiver value/codec, not the new private relation. Its
-wrapper, health, key, route and receipt contracts remain unchanged. SDK
-production source imports neither secret-selection authoring nor the planner.
+SDK #64 selects accepted Core
+`ec61e2b17c3a3f1bdea1dd6bc8fc64ac1b9528b0`, matching the exact dependency-preflight
+guard. Since the prior selection `73d87e99`, Core adds structural configuration
+requirements, declared-slot selection, product/material guards and related
+secret-selection composition. Its root adds two public exports. The SDK
+consumes the unchanged actual receiver value/codec and signed contracts, not
+declared product slots or material discharge. SDK production source imports
+neither secret-selection authoring nor the planner.
 The ordinary pinned suite must establish adoption and import isolation. The
 accepted SDK merge supplies SDK* for subsequent Secrets and Interpreters pins.
-This pin does not add SDK behavior or complete Servers #254 acceptance.
+This pin does not add SDK behavior or complete Servers #280 acceptance.
 SDK runtime behavior is unchanged. Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
 fastapi0.141.1/starlette1.6.0. Version0.1.0, Python floor, package discovery,

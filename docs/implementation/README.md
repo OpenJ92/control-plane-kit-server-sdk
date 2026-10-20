@@ -202,3 +202,17 @@ The owning gate must prove installed SDK compatibility before Secrets adopts
 the actual accepted SDK merge. The already qualified Hello image keeps its
 historical SDK/Core provenance and requires no republication. Servers #254's
 coupled runtime proof remains a later boundary.
+
+SDK #64 starts from accepted develop `1657cb91b143931bafcdb32108950d2bbbb66d95`
+and selects accepted Core `ec61e2b17c3a3f1bdea1dd6bc8fc64ac1b9528b0`.
+Since `73d87e99`, Core adds required configuration slots, declared selection,
+product/material validation and related secret-selection composition, plus two
+root exports. SDK setup still consumes actual receiver configuration through
+the unchanged value/codec; signed receiver/grant contracts are unchanged.
+Metadata, the exact preflight guard, positive/negative coordinate expectations
+and current companions move together. No SDK runtime, extras or runner changes.
+The ordinary pinned gate must establish installed compatibility and import
+isolation, followed by exact owned-resource cleanup verification. Secrets #62
+then adopts the actual accepted SDK merge, followed by Interpreters #211 and
+Servers #280. Package adoption neither changes historical image provenance nor
+establishes managed-image or live grandparent acceptance.
