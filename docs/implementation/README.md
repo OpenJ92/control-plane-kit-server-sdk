@@ -216,3 +216,17 @@ isolation, followed by exact owned-resource cleanup verification. Secrets #62
 then adopts the actual accepted SDK merge, followed by Interpreters #211 and
 Servers #280. Package adoption neither changes historical image provenance nor
 establishes managed-image or live grandparent acceptance.
+
+SDK #66 starts from accepted develop `eff09090755eb21028695f0224eec7b81f2db535`
+and selects accepted Core `955666898218e4f2956b6e9fcd33bdba97ffdb06`.
+Since `ec61e2b`, Core adds the pure retained-image ingress compiler and its
+root/planning exports. SDK-consumed receiver, wrapper, grant, health and key
+contracts are unchanged. Operations in that archive is not installed by the
+Core subdirectory dependency. Current metadata, strict preflight, positive and
+negative coordinate expectations and companions move together. Historical
+coordinates above remain provenance. SDK runtime, extras, runner and workflows
+are unchanged. The normal pinned Docker gate must prove installed compatibility
+and import isolation. Secrets #64 then adopts the actual accepted SDK merge
+with the same Core before Interpreters #214 can run its semantic target gate.
+This alignment creates no new credential/provider authority and proves no
+published image or live deployment behavior.

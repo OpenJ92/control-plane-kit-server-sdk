@@ -1,17 +1,16 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-SDK #64 selects accepted Core
-`ec61e2b17c3a3f1bdea1dd6bc8fc64ac1b9528b0`, matching the exact dependency-preflight
-guard. Since the prior selection `73d87e99`, Core adds structural configuration
-requirements, declared-slot selection, product/material guards and related
-secret-selection composition. Its root adds two public exports. The SDK
-consumes the unchanged actual receiver value/codec and signed contracts, not
-declared product slots or material discharge. SDK production source imports
-neither secret-selection authoring nor the planner.
+SDK #66 selects accepted Core
+`955666898218e4f2956b6e9fcd33bdba97ffdb06`, matching the exact dependency-preflight
+guard. Since the prior selection `ec61e2b`, Core adds the pure retained-image
+ingress compiler and its root/planning exports. The SDK consumes the unchanged
+actual receiver value/codec and signed contracts; SDK production source does
+not import the planner. Operations changes in the same repository archive are
+outside the installed Core subdirectory.
 The ordinary pinned suite must establish adoption and import isolation. The
 accepted SDK merge supplies SDK* for subsequent Secrets and Interpreters pins.
-This pin does not add SDK behavior or complete Servers #280 acceptance.
+This pin does not add SDK behavior or complete Interpreters #214 acceptance.
 SDK runtime behavior is unchanged. Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
 fastapi0.141.1/starlette1.6.0. Version0.1.0, Python floor, package discovery,
