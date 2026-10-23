@@ -16,7 +16,7 @@ python -m pip install .
 
 It is not published to a package index. The base dependency is the immutable
 `control-plane-kit-core` source at
-`955666898218e4f2956b6e9fcd33bdba97ffdb06`; installing from a clean checkout
+`879efb9576ac0580a6236d0a7372c036537b4dfe`; installing from a clean checkout
 resolves that archive pin without requiring git.
 
 Signature-verification dependencies are isolated in one exact optional extra:
