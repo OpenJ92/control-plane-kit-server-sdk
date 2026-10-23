@@ -230,3 +230,15 @@ and import isolation. Secrets #64 then adopts the actual accepted SDK merge
 with the same Core before Interpreters #214 can run its semantic target gate.
 This alignment creates no new credential/provider authority and proves no
 published image or live deployment behavior.
+
+SDK #68 starts from accepted develop `cad5cc3dacbff1da79e6cc8b4c0c88526363e033`
+and selects accepted Core `879efb9576ac0580a6236d0a7372c036537b4dfe`.
+Since `95566689`, Core changes control-plane command/HTTP/parity/projection facts
+and adds the provision policy scope. Core root exports and SDK-consumed receiver,
+wrapper, signing, health and route contracts are unchanged. Metadata, exact
+preflight, positive/negative coordinate expectations and current companions move
+together; historical adoption notes remain provenance. SDK runtime, extras,
+runner and workflows are unchanged. Normal pinned Docker CI must establish
+installation, import isolation and existing package behavior before the actual
+accepted SDK merge is selected by Secrets #68, then Interpreters #222 and Servers
+#313. This prerequisite does not enable intake or change historical images.
