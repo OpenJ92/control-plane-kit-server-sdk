@@ -1,5 +1,16 @@
 # SDK implementation companions
 
+SDK #70 starts from accepted develop `43838fd0f4391428cfffa87f8c4dbd5cc6d5eab1`
+and selects accepted Core `4cc1716bef4d7548ddb4cd343e53fa06bb447104`. The Core
+production delta from the prior `879efb95` selection is limited to operations
+HTTP/parity/projections; SDK receiver, wrapper, health, key, route definitions
+and root exports are unchanged. Active metadata, exact preflight/foundation
+expectations and pin-bearing companions move together. Existing pinned
+base/verification/FastAPI installations and the owning package gate establish
+compatibility; no new test merely mirrors the version string. Secrets #72
+waits for this issue's accepted SDK merge, followed by Interpreters #228 and
+Servers #341. Historical coordinates below remain provenance.
+
 Follow the [cross-repository convention](https://github.com/OpenJ92/control-plane-kit/issues/1799)
 and [SDK issue #18](https://github.com/OpenJ92/control-plane-kit-server-sdk/issues/18).
 Map each covered source path below this directory and append .md. Read the note,
