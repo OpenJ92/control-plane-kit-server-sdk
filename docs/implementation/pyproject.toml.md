@@ -6,7 +6,7 @@ SDK #72 selects accepted Core
 guard. Since the prior selection `4cc1716b`, Core changes only the production
 operations HTTP, parity and projection contracts. The Core root
 and SDK-consumed receiver, wrapper, signing, health and route contracts are
-unchanged. SDK production source does not import the new command owners.
+unchanged. SDK production source does not import the new product-directory read contracts.
 Operations package changes in the archive are outside the installed Core
 subdirectory.
 The ordinary pinned suite must establish adoption and import isolation. The
