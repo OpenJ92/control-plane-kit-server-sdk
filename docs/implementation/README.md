@@ -1,5 +1,17 @@
 # SDK implementation companions
 
+SDK #72 starts from accepted develop `464df26c568971362eb3a08abaf9dfc227a4ddbb`
+and selects accepted Core `fec0816281aeb83ede98616adcc4f96dfe5777a8` for Servers #349.
+Against prior Core `4cc1716bef4d7548ddb4cd343e53fa06bb447104`, only operations HTTP,
+parity and projection catalogues change (ten production lines); workload
+receiver, wrapper, health, verification and route contracts are unchanged.
+Active metadata, strict preflight and existing coordinate expectations move
+together without weakening negative cases. The unchanged pinned owning gate
+must prove resolution, compatibility and import isolation before acceptance.
+Secrets #77 consumes the accepted SDK successor, then Interpreters #230 and
+Servers #349 follow. No production SDK behavior, extras, gate or publication
+changes. Earlier adoption accounts below are historical provenance.
+
 SDK #70 starts from accepted develop `43838fd0f4391428cfffa87f8c4dbd5cc6d5eab1`
 and selects accepted Core `4cc1716bef4d7548ddb4cd343e53fa06bb447104`. The Core
 production delta from the prior `879efb95` selection is limited to operations
