@@ -1,5 +1,15 @@
 # SDK implementation companions
 
+SDK #74 starts from accepted develop `cd4722fbfb942e7c2467a39b3cd0e32ded4a90ac`
+and selects accepted Core `c7b16007467085be997f8dc3025e90e78649b00a` for the
+provider-policy client cohort. Since `fec0816`, Core adds only the pure
+provider-policy module and root exports; consumed workload contracts are
+unchanged. Metadata, strict guard and existing provenance/rejection expectations
+move together. The unchanged pinned owner gate must establish compatibility
+and import isolation. Secrets #81 waits for the actual accepted SDK successor;
+Interpreters #232 follows. No runtime SDK, extras, runner or publication changes.
+The earlier adoption accounts below remain historical evidence.
+
 SDK #72 starts from accepted develop `464df26c568971362eb3a08abaf9dfc227a4ddbb`
 and selects accepted Core `fec0816281aeb83ede98616adcc4f96dfe5777a8` for Servers #349.
 Against prior Core `4cc1716bef4d7548ddb4cd343e53fa06bb447104`, only operations HTTP,
