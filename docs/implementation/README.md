@@ -1,5 +1,17 @@
 # SDK implementation companions
 
+SDK #76 starts from accepted develop `3192360c36934feadc37bb9ae3733ce7da755c31`
+and selects accepted Core `7afef43f3d3b981094e37dcb3062b6e3a4f3d674` for the
+Servers #351 provider-policy public-integration cohort. Since `c7b16007`, Core
+changes only operations HTTP, parity and projection catalogues; SDK-consumed
+receiver, wrapper, signing, health and route contracts are unchanged. Metadata,
+the strict guard and existing provenance/rejection expectations move together.
+The unchanged pinned owner gate must establish compatibility and import
+isolation. Secrets #83 waits for the actual accepted SDK successor, followed by
+Interpreters #234 and Servers #351. No runtime SDK, extra, runner, publication,
+credential or provider-effect change is included. Earlier adoption accounts
+below remain historical evidence.
+
 SDK #74 starts from accepted develop `cd4722fbfb942e7c2467a39b3cd0e32ded4a90ac`
 and selects accepted Core `c7b16007467085be997f8dc3025e90e78649b00a` for the
 provider-policy client cohort. Since `fec0816`, Core adds only the pure
