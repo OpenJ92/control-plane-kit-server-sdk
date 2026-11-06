@@ -2,7 +2,7 @@ Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
 SDK #76 selects accepted Core
-`7afef43f3d3b981094e37dcb3062b6e3a4f3d674`, matching the exact dependency-preflight
+`976901c609d950a557ec1e9966f018e8ff6e16aa`, matching the exact dependency-preflight
 guard. Since the prior selection `c7b16007`, Core changes only operations HTTP,
 parity and projection catalogues. SDK-consumed receiver, wrapper, signing,
 health and route contracts are unchanged. SDK production source does not
