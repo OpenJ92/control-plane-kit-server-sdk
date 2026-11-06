@@ -1,5 +1,7 @@
 # SDK implementation companions
 
+SDK #78 consumes accepted Core #2087 merge976901c for the optional authenticated HTTP sample receiver. Source dependency/preflight/provenance alignment is SDK-only; downstream product/installation pins remain held. See the new http_samples.py, private probe and adapter companions and governing issue #78 for the reviewed scope. Earlier adoption accounts below remain historical.
+
 SDK #76 starts from accepted develop `3192360c36934feadc37bb9ae3733ce7da755c31`
 and selects accepted Core `7afef43f3d3b981094e37dcb3062b6e3a4f3d674` for the
 Servers #351 provider-policy public-integration cohort. Since `c7b16007`, Core

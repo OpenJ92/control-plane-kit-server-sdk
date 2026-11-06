@@ -19,6 +19,12 @@ from control_plane_kit_core.receiver_configuration import (
 from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher, _require_sync_callback
 from control_plane_kit_server_sdk import verifier_keys as keys
 from control_plane_kit_server_sdk import verification
+from control_plane_kit_core.http_verification_sample_installation import (
+    HTTP_VERIFICATION_SAMPLES_CONFIGURATION_ENVIRONMENT,
+    MAX_HTTP_VERIFICATION_SAMPLE_CONFIGURATION_BYTES,
+    HttpVerificationSampleReceiverConfigurationCodec,
+)
+from control_plane_kit_server_sdk.http_samples import HttpVerificationSampleReceiver
 
 
 class WrapperSetupError(ValueError):
@@ -27,18 +33,30 @@ class WrapperSetupError(ValueError):
 
 def load_wrapper_configuration() -> ReceiverNodeControlConfiguration:
     """Snapshot the delivered absolute, regular, non-symlink 0444 file once."""
+    return _load_configuration(WORKLOAD_NODE_CONTROL_CONFIGURATION_ENVIRONMENT,
+        MAX_WRAPPER_CONFIGURATION_BYTES, ReceiverNodeControlConfigurationCodec().decode_bytes)
+
+
+def load_http_verification_sample_configuration():
+    """Read the opt-in companion; the product must bind independent metadata."""
+    return _load_configuration(HTTP_VERIFICATION_SAMPLES_CONFIGURATION_ENVIRONMENT,
+        MAX_HTTP_VERIFICATION_SAMPLE_CONFIGURATION_BYTES,
+        HttpVerificationSampleReceiverConfigurationCodec().decode_canonical_bytes)
+
+
+def _load_configuration(environment, maximum, decode):
     try:
-        path = os.environ[WORKLOAD_NODE_CONTROL_CONFIGURATION_ENVIRONMENT]
+        path = os.environ[environment]
         if not os.path.isabs(path):
             raise ValueError
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
         try:
             before = os.fstat(descriptor)
             if (not stat.S_ISREG(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o444
-                    or before.st_size > MAX_WRAPPER_CONFIGURATION_BYTES):
+                    or before.st_size > maximum):
                 raise ValueError
             chunks = []
-            remaining = MAX_WRAPPER_CONFIGURATION_BYTES + 1
+            remaining = maximum + 1
             while remaining:
                 chunk = os.read(descriptor, remaining)
                 if not chunk:
@@ -49,7 +67,7 @@ def load_wrapper_configuration() -> ReceiverNodeControlConfiguration:
             if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                     after.st_size, after.st_mtime_ns, after.st_ctime_ns):
                 raise ValueError
-            return ReceiverNodeControlConfigurationCodec().decode_bytes(b"".join(chunks))
+            return decode(b"".join(chunks))
         finally:
             os.close(descriptor)
     except Exception:
@@ -120,10 +138,24 @@ class _Wrapper:
 
 
 def _prepare_wrapper(*, configuration: ReceiverNodeControlConfiguration | None = None,
-                     clock: Callable[[], int] | None = None, liveness=None, readiness=None) -> _Wrapper:
+                     clock: Callable[[], int] | None = None, liveness=None, readiness=None,
+                     http_verification_binding=None) -> _Wrapper:
     try:
         codec = ReceiverNodeControlConfigurationCodec()
         configuration = load_wrapper_configuration() if configuration is None else codec.decode_bytes(codec.encode_bytes(configuration))
+        sample_clock = time.time if clock is None else clock
+        sample_receiver = None
+        if http_verification_binding is not None:
+            if http_verification_binding.receiver_configuration != configuration:
+                raise ValueError
+            if (HTTP_VERIFICATION_SAMPLES_CONFIGURATION_ENVIRONMENT in os.environ
+                    and load_http_verification_sample_configuration() != http_verification_binding.configuration):
+                raise ValueError
+            sample_receiver = HttpVerificationSampleReceiver(http_verification_binding, sample_clock)
+            sample_receiver.require_host(configuration.target, configuration.declaration)
+        elif HTTP_VERIFICATION_SAMPLES_CONFIGURATION_ENVIRONMENT in os.environ:
+            # A delivered opt-in cannot silently disappear for lack of metadata.
+            raise ValueError
         clock = _clock if clock is None else clock
         _require_sync_callback(clock)
         kinds = configuration.declaration.surface.health_reads
@@ -159,10 +191,11 @@ def _prepare_wrapper(*, configuration: ReceiverNodeControlConfiguration | None =
             )
         return _Wrapper(lifecycle, dict(target=configuration.target, declaration=configuration.declaration,
             command_verifier=verifiers.get(DelegationKeyPurpose.WORKLOAD_NODE_CONTROL),
-            surface_read_verifier=verifiers[DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ], health_dispatcher=dispatcher))
+            surface_read_verifier=verifiers[DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ],
+            health_dispatcher=dispatcher, http_sample_receiver=sample_receiver))
     except Exception:
         pass
     raise WrapperSetupError("wrapper setup is invalid")
 
 
-__all__ = ["WrapperSetupError", "load_wrapper_configuration"]
+__all__ = ["WrapperSetupError", "load_wrapper_configuration", "load_http_verification_sample_configuration"]

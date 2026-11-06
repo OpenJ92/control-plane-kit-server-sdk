@@ -12,7 +12,7 @@ import control_plane_kit_core as core
 from control_plane_kit_core.algebra import ProviderSocket
 from control_plane_kit_core.products import ProviderRuntimePort
 from control_plane_kit_core.types import Protocol
-from control_plane_kit_core.verification import HttpCheck, VerificationContract, VerificationPolicy
+from control_plane_kit_core.verification import HttpCheck, VerificationContract, VerificationPolicy, VerificationOutcome
 from control_plane_kit_core.http_verification_samples import (
     HttpVerificationSampleRequest, HttpVerificationSampleGrant,
     HttpVerificationSampleResultCodec, http_verification_check_digest,
@@ -101,7 +101,7 @@ def service(*, status=200, body=b"ready"):
         server.server_close()
 
 
-class HttpSampleRouteTests(unittest.TestCase):
+class _SampleRouteHelpers:
     def install(self, fixture, **options):
         app = application.FastApiControlRouteTests()._app()
         try:
@@ -116,6 +116,8 @@ class HttpSampleRouteTests(unittest.TestCase):
         return asyncio.run(helper.asgi(app, path="/__control/verification/http",
             token=fixture.token() if token is None else token, **options))
 
+
+class HttpSampleRouteTests(_SampleRouteHelpers, unittest.TestCase):
     def test_signed_sample_uses_installed_local_check_and_correlated_result(self):
         with service() as (port, requests):
             fixture = SampleFixture(port)
@@ -124,9 +126,262 @@ class HttpSampleRouteTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(headers[b"cache-control"], b"no-store")
             result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
-            self.assertEqual(result.outcome, core.VerificationOutcome.PASSED)
+            self.assertEqual(result.outcome, VerificationOutcome.PASSED)
             self.assertEqual((result.evidence.status_code, result.evidence.response_bytes), (200, 5))
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0][0], "/ready")
             self.assertFalse(any(name.lower() == "authorization" for name, _ in requests[0][1]))
             self.assertNotIn(b"ready", body)
+
+    def test_service_failures_and_observed_overflow_remain_bounded_service_evidence(self):
+        for status, body, outcome, count in (
+            (500, b"failed", VerificationOutcome.FAILED, 6),
+            (302, b"redirect", VerificationOutcome.FAILED, 8),
+            (200, b"x" * 16, VerificationOutcome.PASSED, 16),
+            (200, b"x" * 17, VerificationOutcome.MALFORMED, 16),
+        ):
+            with self.subTest(status=status, count=len(body)), service(status=status, body=body) as (port, requests):
+                fixture = SampleFixture(port)
+                app = self.install(fixture)
+                code, _, encoded = self.read(app, fixture)
+                self.assertEqual(code, 200)
+                result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(encoded))
+                self.assertEqual(result.outcome, outcome)
+                self.assertEqual((result.evidence.status_code, result.evidence.response_bytes), (status, count))
+                self.assertEqual(len(requests), 1)
+
+    def test_signed_scope_purpose_time_and_framing_denials_precede_local_io(self):
+        with service() as (port, requests):
+            fixture = SampleFixture(port)
+            app = self.install(fixture)
+            foreign = replace(fixture.request, target=replace(fixture.request.target, receiver_id="f" * 32))
+            for token in (
+                fixture.token(private=ed25519.Ed25519PrivateKey.generate()),
+                fixture.token(request=foreign),
+                fixture.token(request=replace(fixture.request, check_digest="e" * 64)),
+                fixture.token(request=replace(fixture.request, sample_ordinal=4)),
+                fixture.token(purpose=core.DelegationKeyPurpose.GATEWAY_HTTP_VERIFICATION_SAMPLE_TRANSIT),
+                fixture.token(expires_at=150), fixture.token(jti="different-outer-jti"),
+            ):
+                code, _, body = self.read(app, fixture, token)
+                self.assertEqual(code, 401)
+                self.assertNotIn(b"evidence", body)
+                self.assertLess(len(body), 128)
+            for options in (dict(query=b"check=other"), dict(chunks=(b"body",)),
+                            dict(headers=[(b"authorization", b"Bearer " + fixture.token()),
+                                          (b"content-length", b"1")]),
+                            dict(raw_path=b"/__control/verification/%68ttp")):
+                self.assertEqual(self.read(app, fixture, **options)[0], 400)
+            self.assertEqual(requests, [])
+
+    def test_explicit_and_file_backed_cross_wires_refuse_before_host_mutation(self):
+        from control_plane_kit_server_sdk import stdlib as sdk_stdlib
+        from tests.test_stdlib_control import ApplicationHandler
+        with service() as (port, requests):
+            fixture = SampleFixture(port)
+            original = fixture.receiver.configuration
+            other_target = replace(original.target, receiver_id="f" * 32)
+            other_declaration = replace(original.declaration, surface=replace(original.declaration.surface,
+                health_reads=(core.NodeHealthReadKind.LIVENESS,)))
+            for other in (replace(original, target=other_target), replace(original, declaration=other_declaration)):
+                binding = replace(fixture.binding, receiver_configuration=other,
+                    configuration=replace(fixture.binding.configuration, target=other.target,
+                                          declaration_identity=other.declaration.identity().value))
+                self.assertEqual(binding.audience, fixture.binding.audience)
+                for file_backed in (False, True):
+                    with fixture.receiver.delivered():
+                        configuration = None if file_backed else original
+                        app = application.FastApiControlRouteTests()._app()
+                        prior_routes, prior_lifespan = app.router.routes, app.router.lifespan_context
+                        with self.assertRaises(ValueError):
+                            sdk_fastapi.install_cpk_wrapper(app, configuration=configuration,
+                                http_verification_binding=binding)
+                        self.assertIs(app.router.routes, prior_routes)
+                        self.assertIs(app.router.lifespan_context, prior_lifespan)
+                        with self.assertRaises(ValueError):
+                            sdk_stdlib.CpkThreadingHTTPServer(("127.0.0.1", 0), ApplicationHandler,
+                                configuration=configuration, http_verification_binding=binding)
+            self.assertEqual(requests, [])
+
+    def test_threaded_stdlib_route_preserves_application_and_single_thread_refuses(self):
+        from control_plane_kit_server_sdk import stdlib as sdk_stdlib
+        from tests.test_stdlib_control import ApplicationHandler, StdlibControlTests
+        with service() as (port, requests):
+            fixture = SampleFixture(port)
+            with self.assertRaises(ValueError):
+                sdk_stdlib.CpkHTTPServer(("127.0.0.1", 0), ApplicationHandler,
+                    configuration=fixture.receiver.configuration, http_verification_binding=fixture.binding)
+            server = sdk_stdlib.CpkThreadingHTTPServer(("127.0.0.1", 0), ApplicationHandler,
+                configuration=fixture.receiver.configuration, http_verification_binding=fixture.binding,
+                clock=lambda: 150)
+            server.daemon_threads = False
+            server.application_calls, server.application_logs = [], []
+            thread = Thread(target=server.serve_forever, kwargs=dict(poll_interval=0.01))
+            helper = StdlibControlTests()
+            thread.start()
+            try:
+                raw = helper.request(server, target=b"/__control/verification/http", token=fixture.token())
+                code, body = helper.response(raw)
+                self.assertEqual(code, 200)
+                result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
+                self.assertEqual(result.outcome, VerificationOutcome.PASSED)
+                self.assertEqual(len(requests), 1)
+                raw = helper.request(server, target=b"/ordinary", token=b"unused")
+                self.assertEqual(helper.response(raw)[0], 201)
+                self.assertEqual(len(server.application_calls), 1)
+                raw = helper.request(server, target=b"/__control/verification/http", token=b"bad")
+                self.assertEqual(helper.response(raw)[0], 401)
+                self.assertEqual(len(requests), 1)
+            finally:
+                server.shutdown()
+                thread.join(3)
+                server.server_close()
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(server.socket.fileno(), -1)
+
+    def test_unsafe_installed_path_refuses_before_local_io(self):
+        with service() as (port, requests):
+            fixture = SampleFixture(port, path="/ready\r\nx-injected: unsafe")
+            app = application.FastApiControlRouteTests()._app()
+            prior = app.router.routes
+            with self.assertRaises(ValueError):
+                sdk_fastapi.install_cpk_wrapper(app, configuration=fixture.receiver.configuration,
+                    http_verification_binding=fixture.binding)
+            self.assertIs(app.router.routes, prior)
+            self.assertEqual(requests, [])
+
+
+@contextmanager
+def raw_service(response):
+    import socket
+    from threading import Event
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    server.settimeout(2)
+    stopped, closed = Event(), Event()
+    def run():
+        try:
+            connection, _ = server.accept()
+            with connection:
+                connection.settimeout(1)
+                request = b""
+                while b"\r\n\r\n" not in request:
+                    part = connection.recv(4096)
+                    if not part:
+                        return
+                    request += part
+                if callable(response):
+                    response(connection, stopped, closed)
+                else:
+                    connection.sendall(response)
+        except (OSError, TimeoutError):
+            closed.set()
+    thread = Thread(target=run)
+    thread.start()
+    try:
+        yield server.getsockname()[1], closed
+    finally:
+        stopped.set()
+        server.close()
+        thread.join(3)
+        if thread.is_alive():
+            raise AssertionError("test-owned HTTP service did not terminate")
+
+
+class HttpSampleTransportTests(_SampleRouteHelpers, unittest.TestCase):
+    def test_complete_framing_is_required_and_chunked_response_is_supported(self):
+        for response, outcome, evidence in (
+            (b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nabc", VerificationOutcome.FAILED, None),
+            (b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nabc", VerificationOutcome.FAILED, None),
+            (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 3\r\n\r\nabc", VerificationOutcome.FAILED, None),
+            (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n", VerificationOutcome.PASSED, 3),
+            (b"HTTP/1.0 200 OK\r\n\r\nabc", VerificationOutcome.PASSED, 3),
+            (b"not-http\r\n\r\n", VerificationOutcome.FAILED, None),
+        ):
+            with self.subTest(response=response[:12]), raw_service(response) as (port, _):
+                fixture = SampleFixture(port)
+                code, _, body = self.read(self.install(fixture), fixture)
+                self.assertEqual(code, 200)
+                result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
+                self.assertEqual(result.outcome, outcome)
+                self.assertEqual(None if result.evidence is None else result.evidence.response_bytes, evidence)
+
+    def test_header_and_body_trickle_end_at_absolute_deadline_and_close_socket(self):
+        import time
+        import select
+        for prefix in (b"HTTP/1.1 200 OK\r\nX-Trickle: ", b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n"):
+            def trickle(connection, stopped, closed):
+                connection.sendall(prefix)
+                while not stopped.wait(0.025):
+                    if select.select([connection], [], [], 0)[0] and connection.recv(1) == b"":
+                        closed.set()
+                        return
+                    connection.sendall(b"x")
+            with self.subTest(body=b"Content-Length" in prefix), raw_service(trickle) as (port, closed):
+                fixture = SampleFixture(port, timeout=0.15)
+                app = self.install(fixture)
+                started = time.monotonic()
+                code, _, body = self.read(app, fixture)
+                elapsed = time.monotonic() - started
+                result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
+                self.assertEqual((code, result.outcome, result.evidence), (200, VerificationOutcome.TIMED_OUT, None))
+                self.assertLess(elapsed, 0.8)
+                self.assertTrue(closed.wait(0.5))
+
+    def test_fractional_grant_remaining_time_is_not_rounded_up(self):
+        import time
+        def slow(connection, stopped, closed):
+            connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\na")
+            stopped.wait(1)
+        with raw_service(slow) as (port, _):
+            fixture = SampleFixture(port, timeout=1)
+            app = application.FastApiControlRouteTests()._app()
+            sdk_fastapi.install_cpk_wrapper(app, configuration=fixture.receiver.configuration,
+                http_verification_binding=fixture.binding, clock=lambda: 150.9)
+            started = time.monotonic()
+            code, _, body = self.read(app, fixture, fixture.token(expires_at=151))
+            result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
+            self.assertEqual((code, result.outcome, result.evidence), (200, VerificationOutcome.TIMED_OUT, None))
+            self.assertLess(time.monotonic() - started, 0.6)
+
+    def test_companion_loader_and_present_invalid_opt_in_fail_closed(self):
+        import os
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from control_plane_kit_core.http_verification_sample_installation import (
+            HTTP_VERIFICATION_SAMPLES_CONFIGURATION_ENVIRONMENT as environment,
+            HttpVerificationSampleReceiverConfigurationCodec,
+        )
+        from control_plane_kit_server_sdk.wrapper import load_http_verification_sample_configuration
+        with service() as (port, requests), TemporaryDirectory() as temporary:
+            fixture = SampleFixture(port)
+            codec = HttpVerificationSampleReceiverConfigurationCodec()
+            path = Path(temporary) / "samples.json"
+            original = os.environ.get(environment)
+            os.environ[environment] = str(path)
+            try:
+                path.write_bytes(codec.encode_canonical_bytes(fixture.binding.configuration))
+                path.chmod(0o444)
+                self.assertEqual(load_http_verification_sample_configuration(), fixture.binding.configuration)
+                self.install(fixture)
+                app = application.FastApiControlRouteTests()._app()
+                prior = app.router.routes
+                with self.assertRaises(ValueError):
+                    sdk_fastapi.install_cpk_wrapper(app, configuration=fixture.receiver.configuration)
+                self.assertIs(app.router.routes, prior)
+                path.chmod(0o644)
+                with self.assertRaises(ValueError):
+                    load_http_verification_sample_configuration()
+                path.write_bytes(b"invalid")
+                path.chmod(0o444)
+                with self.assertRaises(ValueError):
+                    sdk_fastapi.install_cpk_wrapper(app, configuration=fixture.receiver.configuration,
+                        http_verification_binding=fixture.binding)
+                self.assertIs(app.router.routes, prior)
+                self.assertEqual(requests, [])
+            finally:
+                if original is None:
+                    del os.environ[environment]
+                else:
+                    os.environ[environment] = original

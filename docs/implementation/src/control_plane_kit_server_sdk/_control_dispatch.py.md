@@ -17,3 +17,5 @@ replay and APPLY passes the same codec to the existing coordinator. Invalid
 binding is 401, fully authenticated foreign scope/declaration is 403, and only
 a declared local variable absent from the registry is 404. No external result
 is restamped with an expected digest.
+
+SDK #78 additionally captures an optional exact HttpVerificationSampleReceiver. Validation compares its binding to the installer’s independent target/full declaration before descriptor callbacks or publication; both adapters reuse that same neutral receiver. Existing variable/health/replay ownership is unchanged.

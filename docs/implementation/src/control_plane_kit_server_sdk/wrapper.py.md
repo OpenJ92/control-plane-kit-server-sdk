@@ -14,3 +14,5 @@ request. Audience derivation uses receiver_node_control_audience. Reinstalling
 the same configuration retains this receiver identity and static public trust,
 not replay, process continuity or current graph authority. File limits, opened
 file checks, lifecycle state machine and callback rules remain unchanged.
+
+SDK #78 selects Core976901c and adds explicit http_verification_binding. Its full receiver configuration must equal the effective independently loaded/supplied host configuration; route installers also verify target/declaration. The companion loader shares the regular0444/no-follow/bounded/stable-descriptor reader and requires Core canonical bytes. If the companion environment is present, it must match the supplied binding; a delivered opt-in without independent metadata refuses. It is not an automatic product metadata discovery mechanism. Default sample clock uses unrounded time.time; existing health uses its original integer clock.

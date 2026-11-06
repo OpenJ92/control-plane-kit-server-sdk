@@ -14,3 +14,5 @@ setup to receiver configuration V2. The same shared dispatcher verifies receiver
 requests and emits correlated health V2, surface V3 and command V2 results.
 Installation, raw parser ownership, listener and lifecycle algorithms are
 unchanged; restart reconstructs configuration identity only.
+
+SDK #78 accepts the optional neutral sample receiver through the existing passive installer and a binding through automatic wrappers. Exact host equality precedes publication. Sample opt-in requires ThreadingHTTPServer or CpkThreadingHTTPServer; single-threaded hosts refuse before publication/bind to avoid self-loopback deadlock. Products still own listeners/processes. No implicit thread or listener is created.

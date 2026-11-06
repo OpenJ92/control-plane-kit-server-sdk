@@ -480,3 +480,34 @@ and public trust. It does not restore process-local variable state or replay,
 prove physical process continuity, rotate static keys, or instantly revoke an
 older still-valid grant. SDK package evidence does not establish controller
 adoption, gateway command delivery, durable activity history or live deployment.
+
+### Optional installed HTTP verification samples
+
+SDK #78 adds a separately authenticated, opt-in sample route alongside existing
+control and health routes. A product builds Core's
+`HttpVerificationSampleReceiverBinding` from its independently loaded receiver
+configuration, sample companion, original verification contract, provider sockets
+and container ports. Pass it as `http_verification_binding` to
+`fastapi.install_cpk_wrapper` or `stdlib.CpkThreadingHTTPServer`. Passive installers
+accept `http_sample_receiver=HttpVerificationSampleReceiver(binding)` from the
+optional `control_plane_kit_server_sdk.http_samples` module. Both installers bind
+the sample receiver to the actual host target and declaration before publication.
+
+`wrapper.load_http_verification_sample_configuration()` safely reads the canonical
+0444 companion selected by `CPK_HTTP_VERIFICATION_SAMPLES_CONFIGURATION_FILE`.
+This file supplies trust and an allowlist; the product must still supply its
+independent original check and socket/port metadata. A delivered opt-in without
+that binding, or a file that disagrees with it, refuses setup. No environment and
+no binding preserve the existing route set.
+
+The fixed bodyless GET `/__control/verification/http` accepts a dedicated workload
+sample grant, performs one bounded GET to the installed numeric-loopback port/path,
+and returns Core evidence bound to the complete original check and request. It
+never forwards a credential, follows a redirect, retries, or returns response
+content. Incomplete/malformed/failed transport produces unavailable evidence;
+actual service failures and observed overflow retain their distinct outcomes.
+The absolute local deadline includes the unrounded remaining grant window.
+Single-threaded stdlib hosts refuse this opt-in because they cannot service a
+self-loopback request while handling its control request. Repeated valid signed
+reads may probe again; the receiver promises no durable replay or at-most-once
+execution. Source/package evidence does not establish installed product adoption.

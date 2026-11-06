@@ -10,8 +10,10 @@ from control_plane_kit_core import (
     NodeControlReceiverTarget,
     WorkloadNodeControlSurfaceDeclaration,
 )
-from control_plane_kit_core.control_routes import NODE_CONTROL_ROUTES, NODE_HEALTH_ROUTES
+from control_plane_kit_core.control_routes import NODE_CONTROL_ROUTES, NODE_HEALTH_ROUTES, HTTP_VERIFICATION_SAMPLE_ROUTES
 from control_plane_kit_server_sdk._fastapi_health_routes import _build_health_routes
+from control_plane_kit_server_sdk._fastapi_http_samples import _build_http_sample_routes
+from control_plane_kit_server_sdk.http_samples import HttpVerificationSampleReceiver
 from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
 from control_plane_kit_server_sdk._fastapi_surface_routes import (
     _build_surface_routes,
@@ -65,7 +67,7 @@ def _route_is_disjoint(route: object) -> bool:
 
 
 def _canonical_route_shape(
-    routes: tuple[object, ...], *, variables: bool, health: bool,
+    routes: tuple[object, ...], *, variables: bool, health: bool, http_sample: bool = False,
 ) -> bool:
     observed = tuple(
         (route.name, next(iter(route.methods)), route.path)
@@ -74,6 +76,8 @@ def _canonical_route_shape(
     declarations = NODE_CONTROL_ROUTES.routes if variables else NODE_CONTROL_ROUTES.routes[:2]
     if health:
         declarations = (*declarations, *NODE_HEALTH_ROUTES.routes)
+    if http_sample:
+        declarations = (*declarations, *HTTP_VERIFICATION_SAMPLE_ROUTES.routes)
     expected = tuple(
         (route.name, route.method.value, route.path)
         for route in declarations
@@ -89,6 +93,7 @@ def _prepare_installation(
     command_verifier: object,
     surface_read_verifier: object,
     health_dispatcher: object,
+    http_sample_receiver: object,
 ) -> tuple[list[object], tuple[object, ...]]:
     if (
         type(app) is not fastapi.FastAPI
@@ -100,7 +105,7 @@ def _prepare_installation(
     has_variables, has_health = _validate_control_configuration(
         target=target, declaration=declaration, variables=variables,
         command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
-        health_dispatcher=health_dispatcher,
+        health_dispatcher=health_dispatcher, http_sample_receiver=http_sample_receiver,
     )
 
     prior_routes = app.router.routes
@@ -115,7 +120,7 @@ def _prepare_installation(
     control = _prepare_control_dispatch(
         target=target, declaration=declaration, variables=variables,
         command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
-        health_dispatcher=health_dispatcher,
+        health_dispatcher=health_dispatcher, http_sample_receiver=http_sample_receiver,
     )
     surface_routes = _build_surface_routes(control=control)
     variable_routes = ()
@@ -126,8 +131,9 @@ def _prepare_installation(
             replay=control.replay,
         )
     health_routes = _build_health_routes(dispatcher=control.health_dispatcher) if has_health else ()
-    routes = (*surface_routes, *variable_routes, *health_routes)
-    if not _canonical_route_shape(routes, variables=has_variables, health=has_health):
+    sample_routes = _build_http_sample_routes(control.http_sample_receiver) if http_sample_receiver is not None else ()
+    routes = (*surface_routes, *variable_routes, *health_routes, *sample_routes)
+    if not _canonical_route_shape(routes, variables=has_variables, health=has_health, http_sample=http_sample_receiver is not None):
         raise ValueError
     for route in routes:
         setattr(route, _MARKER_ATTRIBUTE, _MARKER)
@@ -143,6 +149,7 @@ def install_cpk_control_routes(
     command_verifier: Ed25519WorkloadNodeControlVerifier | None = None,
     surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,
     health_dispatcher: WorkloadNodeHealthReadDispatcher | None = None,
+    http_sample_receiver: HttpVerificationSampleReceiver | None = None,
 ) -> None:
     """Install the exact CPK route family with one host-app mutation."""
 
@@ -157,6 +164,7 @@ def install_cpk_control_routes(
             command_verifier,
             surface_read_verifier,
             health_dispatcher,
+            http_sample_receiver,
         )
     except _AlreadyInstalled:
         category = "installed"
@@ -177,12 +185,12 @@ def install_cpk_control_routes(
 
 
 def install_cpk_wrapper(app: fastapi.FastAPI, *, configuration=None, clock=None,
-                        variables: tuple[object, ...] = (), liveness=None, readiness=None) -> None:
+                        variables: tuple[object, ...] = (), liveness=None, readiness=None, http_verification_binding=None) -> None:
     """Load delivered configuration and compose baseline health with app lifespan."""
     from contextlib import asynccontextmanager
     from control_plane_kit_server_sdk.wrapper import _prepare_wrapper
 
-    wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness)
+    wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness, http_verification_binding=http_verification_binding)
     # Do not publish lifespan changes until the existing atomic installer succeeds.
     # Read the original lifespan only for a supported host, before publication.
     if type(app) is not fastapi.FastAPI or type(app.router) is not APIRouter:

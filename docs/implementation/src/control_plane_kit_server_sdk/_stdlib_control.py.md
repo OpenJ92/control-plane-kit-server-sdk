@@ -8,3 +8,5 @@ Raw canonical paths/methods precede shared byte/Bearer checks. Queries/fragments
 SDK #43 forwards the prepared full declaration alongside receiver target to
 shared variable interpretation. That owner now produces correlated V2 envelopes;
 this adapter's framing, disconnection and denial semantics are unchanged.
+
+SDK #78 recognizes only the exact fixed sample GET when the receiver is present, reuses bodyless framing and delegates the credential to its neutral owner. Admission refusal maps to fixed401, ordinary errors500; results remain exact canonical bounded bytes. The raw alias/method/body/header rules and application ownership remain unchanged.

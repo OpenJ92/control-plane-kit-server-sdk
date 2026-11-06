@@ -49,3 +49,5 @@ must agree even if Core reports a local scope mismatch first. Invalid binding
 remains 401 and never reaches callbacks or replay. Surface requests reconstruct
 those fields directly from the authenticated grant. Both public exception
 families retain fixed messages and no candidate diagnostics.
+
+SDK #78 selects Core976901c. Existing three verifier implementations remain unchanged. The dedicated new sample family lives in optional http_samples.py and reuses only private compact/duplicate-aware parsing helpers; its signature, installed binding and probe are separate. No V2 key-purpose substitution is introduced.

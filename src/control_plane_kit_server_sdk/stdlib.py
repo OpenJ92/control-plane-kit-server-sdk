@@ -11,6 +11,7 @@ from control_plane_kit_server_sdk._control_dispatch import (
 )
 from control_plane_kit_server_sdk._stdlib_control import _control_target, _dispatch, _error
 from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
+from control_plane_kit_server_sdk.http_samples import HttpVerificationSampleReceiver
 from control_plane_kit_server_sdk.verification import (
     Ed25519WorkloadNodeControlSurfaceReadVerifier, Ed25519WorkloadNodeControlVerifier,
 )
@@ -53,20 +54,23 @@ def install_cpk_control_routes(
     command_verifier: Ed25519WorkloadNodeControlVerifier | None = None,
     surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,
     health_dispatcher: WorkloadNodeHealthReadDispatcher | None = None,
+    http_sample_receiver: HttpVerificationSampleReceiver | None = None,
 ) -> None:
     """Reserve the control namespace before the product binds/starts its server."""
     prepared_handler = None
     try:
         application_handler = _validate_host(server, reserve_control_namespace)
+        if http_sample_receiver is not None and type(server) not in (ThreadingHTTPServer, CpkThreadingHTTPServer):
+            raise ValueError
         _validate_control_configuration(
             target=target, declaration=declaration, variables=variables,
             command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
-            health_dispatcher=health_dispatcher,
+            health_dispatcher=health_dispatcher, http_sample_receiver=http_sample_receiver,
         )
         control = _prepare_control_dispatch(
             target=target, declaration=declaration, variables=variables,
             command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
-            health_dispatcher=health_dispatcher,
+            health_dispatcher=health_dispatcher, http_sample_receiver=http_sample_receiver,
         )
 
         class ControlHandler(application_handler):
@@ -118,10 +122,10 @@ def install_cpk_control_routes(
 class _CpkServerLifecycle:
     """Public stdlib hooks only; the ordinary server owns its network loop."""
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, *,
-                 configuration=None, clock=None, variables=(), liveness=None, readiness=None):
+                 configuration=None, clock=None, variables=(), liveness=None, readiness=None, http_verification_binding=None):
         from control_plane_kit_server_sdk.wrapper import _prepare_wrapper
 
-        wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness)
+        wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness, http_verification_binding=http_verification_binding)
         self._cpk_lifecycle = wrapper.lifecycle
         super().__init__(server_address, RequestHandlerClass, bind_and_activate=False)
         try:
