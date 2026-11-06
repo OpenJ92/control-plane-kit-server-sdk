@@ -106,7 +106,7 @@ class _SampleRouteHelpers:
         app = application.FastApiControlRouteTests()._app()
         try:
             sdk_fastapi.install_cpk_wrapper(app, configuration=fixture.receiver.configuration,
-                clock=lambda: 150, http_verification_binding=fixture.binding, **options)
+                clock=lambda: 150, http_sample_clock=lambda: 150, http_verification_binding=fixture.binding, **options)
         except (TypeError, ValueError):
             self.fail("SDK wrapper refuses an independently installed HTTP sample binding")
         return app
@@ -213,7 +213,7 @@ class HttpSampleRouteTests(_SampleRouteHelpers, unittest.TestCase):
                     configuration=fixture.receiver.configuration, http_verification_binding=fixture.binding)
             server = sdk_stdlib.CpkThreadingHTTPServer(("127.0.0.1", 0), ApplicationHandler,
                 configuration=fixture.receiver.configuration, http_verification_binding=fixture.binding,
-                clock=lambda: 150)
+                clock=lambda: 150, http_sample_clock=lambda: 150)
             server.daemon_threads = False
             server.application_calls, server.application_logs = [], []
             thread = Thread(target=server.serve_forever, kwargs=dict(poll_interval=0.01))
@@ -227,7 +227,7 @@ class HttpSampleRouteTests(_SampleRouteHelpers, unittest.TestCase):
                 self.assertEqual(result.outcome, VerificationOutcome.PASSED)
                 self.assertEqual(len(requests), 1)
                 raw = helper.request(server, target=b"/ordinary", token=b"unused")
-                self.assertEqual(helper.response(raw)[0], 201)
+                self.assertIn(b" 201 ", raw.split(b"\r\n", 1)[0])
                 self.assertEqual(len(server.application_calls), 1)
                 raw = helper.request(server, target=b"/__control/verification/http", token=b"bad")
                 self.assertEqual(helper.response(raw)[0], 401)
@@ -338,12 +338,18 @@ class HttpSampleTransportTests(_SampleRouteHelpers, unittest.TestCase):
             fixture = SampleFixture(port, timeout=1)
             app = application.FastApiControlRouteTests()._app()
             sdk_fastapi.install_cpk_wrapper(app, configuration=fixture.receiver.configuration,
-                http_verification_binding=fixture.binding, clock=lambda: 150.9)
+                http_verification_binding=fixture.binding, clock=lambda: 150, http_sample_clock=lambda: 150.9)
             started = time.monotonic()
             code, _, body = self.read(app, fixture, fixture.token(expires_at=151))
             result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
             self.assertEqual((code, result.outcome, result.evidence), (200, VerificationOutcome.TIMED_OUT, None))
             self.assertLess(time.monotonic() - started, 0.6)
+            helper = asgi.FastApiHealthRouteTests()
+            health = fixture.receiver.health_request()
+            health_code, _, health_body = asyncio.run(helper.asgi(app, token=fixture.receiver.token(health)))
+            self.assertEqual(health_code, 200)
+            self.assertEqual(core.ReceiverHealthReadResultCodec(health, fixture.receiver.declaration).decode(
+                json.loads(health_body)).request, health)
 
     def test_companion_loader_and_present_invalid_opt_in_fail_closed(self):
         import os
@@ -385,3 +391,75 @@ class HttpSampleTransportTests(_SampleRouteHelpers, unittest.TestCase):
                     del os.environ[environment]
                 else:
                     os.environ[environment] = original
+
+    def test_forbidden_version_and_status_framing_never_become_service_evidence(self):
+        for response, expected in (
+            (b"HTTP/1.0 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", 200),
+            (b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n", 204),
+        ):
+            with self.subTest(status=expected), raw_service(response) as (port, _):
+                fixture = SampleFixture(port)
+                fixture.check = replace(fixture.check, expected_statuses=(expected,))
+                fixture.binding = replace(fixture.bind(), provider_ports=(ProviderRuntimePort("control", port),))
+                fixture.request = replace(fixture.request, check_digest=http_verification_check_digest(fixture.check))
+                code, _, body = self.read(self.install(fixture), fixture)
+                result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
+                self.assertEqual((code, result.outcome, result.evidence), (200, VerificationOutcome.FAILED, None))
+
+    def test_coalesced_framing_reads_consume_only_cap_plus_one_payload_bytes(self):
+        from unittest.mock import patch
+        from control_plane_kit_server_sdk.http_samples import HttpVerificationSampleReceiver
+        for prefix, suffix in (
+            (b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n", b""),
+            (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3e8\r\n", b"\r\n0\r\n\r\n"),
+        ):
+            class CoalescedSocket:
+                def __init__(self):
+                    self.position, self.payload_bytes, self.closed = 0, 0, False
+                    self.data = prefix + b"x" * 1000 + suffix
+                def settimeout(self, timeout):
+                    return None
+                def sendall(self, value):
+                    return None
+                def recv(self, maximum):
+                    start, end = self.position, min(self.position + maximum, len(self.data))
+                    self.position = end
+                    self.payload_bytes += max(0, min(end, len(prefix) + 1000) - max(start, len(prefix)))
+                    return self.data[start:end]
+                def close(self):
+                    self.closed = True
+            fixture = SampleFixture(8080, cap=1)
+            connection = CoalescedSocket()
+            with patch("socket.create_connection", return_value=connection):
+                body = HttpVerificationSampleReceiver(fixture.binding, lambda: 150).read(fixture.token())
+            result = HttpVerificationSampleResultCodec(fixture.request, fixture.check).decode(json.loads(body))
+            self.assertEqual(result.outcome, VerificationOutcome.MALFORMED)
+            self.assertEqual(result.evidence.response_bytes, 1)
+            self.assertEqual(connection.payload_bytes, 2)
+            self.assertTrue(connection.closed)
+
+    def test_every_installed_sample_key_is_actual_ed25519_before_publication(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from control_plane_kit_server_sdk import stdlib as sdk_stdlib
+        from tests.test_stdlib_control import ApplicationHandler
+        rsa_public = rsa.generate_private_key(public_exponent=65537, key_size=2048).public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode("ascii")
+        malformed = "-----BEGIN PUBLIC KEY-----\nYWJjZA==\n-----END PUBLIC KEY-----\n"
+        with service() as (port, requests):
+            fixture = SampleFixture(port)
+            for pem in (rsa_public, malformed):
+                bad_key = core.DelegationPublicKey("invalid-key", core.DelegationKeyAlgorithm.ED25519, pem)
+                verifier = replace(fixture.binding.configuration.verifier, public_keys=(fixture.key, bad_key))
+                binding = replace(fixture.binding, configuration=replace(fixture.binding.configuration, verifier=verifier))
+                app = application.FastApiControlRouteTests()._app()
+                prior, lifespan = app.router.routes, app.router.lifespan_context
+                with self.assertRaises(ValueError):
+                    sdk_fastapi.install_cpk_wrapper(app, configuration=fixture.receiver.configuration,
+                        http_verification_binding=binding)
+                self.assertIs(app.router.routes, prior)
+                self.assertIs(app.router.lifespan_context, lifespan)
+                with self.assertRaises(ValueError):
+                    sdk_stdlib.CpkThreadingHTTPServer(("127.0.0.1", 0), ApplicationHandler,
+                        configuration=fixture.receiver.configuration, http_verification_binding=binding)
+            self.assertEqual(requests, [])

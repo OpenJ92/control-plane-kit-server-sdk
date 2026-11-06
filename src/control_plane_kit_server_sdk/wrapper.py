@@ -139,11 +139,11 @@ class _Wrapper:
 
 def _prepare_wrapper(*, configuration: ReceiverNodeControlConfiguration | None = None,
                      clock: Callable[[], int] | None = None, liveness=None, readiness=None,
-                     http_verification_binding=None) -> _Wrapper:
+                     http_verification_binding=None, http_sample_clock=None) -> _Wrapper:
     try:
         codec = ReceiverNodeControlConfigurationCodec()
         configuration = load_wrapper_configuration() if configuration is None else codec.decode_bytes(codec.encode_bytes(configuration))
-        sample_clock = time.time if clock is None else clock
+        sample_clock = time.time if http_sample_clock is None else http_sample_clock
         sample_receiver = None
         if http_verification_binding is not None:
             if http_verification_binding.receiver_configuration != configuration:

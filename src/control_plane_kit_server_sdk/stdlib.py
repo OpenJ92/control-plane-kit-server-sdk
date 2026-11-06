@@ -122,10 +122,10 @@ def install_cpk_control_routes(
 class _CpkServerLifecycle:
     """Public stdlib hooks only; the ordinary server owns its network loop."""
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, *,
-                 configuration=None, clock=None, variables=(), liveness=None, readiness=None, http_verification_binding=None):
+                 configuration=None, clock=None, variables=(), liveness=None, readiness=None, http_verification_binding=None, http_sample_clock=None):
         from control_plane_kit_server_sdk.wrapper import _prepare_wrapper
 
-        wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness, http_verification_binding=http_verification_binding)
+        wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness, http_verification_binding=http_verification_binding, http_sample_clock=http_sample_clock)
         self._cpk_lifecycle = wrapper.lifecycle
         super().__init__(server_address, RequestHandlerClass, bind_and_activate=False)
         try:

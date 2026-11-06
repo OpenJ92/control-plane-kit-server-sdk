@@ -507,6 +507,8 @@ never forwards a credential, follows a redirect, retries, or returns response
 content. Incomplete/malformed/failed transport produces unavailable evidence;
 actual service failures and observed overflow retain their distinct outcomes.
 The absolute local deadline includes the unrounded remaining grant window.
+The optional `http_sample_clock` is a separate precise wall clock (default
+`time.time`); the existing `clock` keeps its integer V2 verifier contract.
 Single-threaded stdlib hosts refuse this opt-in because they cannot service a
 self-loopback request while handling its control request. Repeated valid signed
 reads may probe again; the receiver promises no durable replay or at-most-once

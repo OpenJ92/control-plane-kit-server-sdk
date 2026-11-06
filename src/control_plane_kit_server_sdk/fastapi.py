@@ -185,12 +185,12 @@ def install_cpk_control_routes(
 
 
 def install_cpk_wrapper(app: fastapi.FastAPI, *, configuration=None, clock=None,
-                        variables: tuple[object, ...] = (), liveness=None, readiness=None, http_verification_binding=None) -> None:
+                        variables: tuple[object, ...] = (), liveness=None, readiness=None, http_verification_binding=None, http_sample_clock=None) -> None:
     """Load delivered configuration and compose baseline health with app lifespan."""
     from contextlib import asynccontextmanager
     from control_plane_kit_server_sdk.wrapper import _prepare_wrapper
 
-    wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness, http_verification_binding=http_verification_binding)
+    wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness, http_verification_binding=http_verification_binding, http_sample_clock=http_sample_clock)
     # Do not publish lifespan changes until the existing atomic installer succeeds.
     # Read the original lifespan only for a supported host, before publication.
     if type(app) is not fastapi.FastAPI or type(app.router) is not APIRouter:

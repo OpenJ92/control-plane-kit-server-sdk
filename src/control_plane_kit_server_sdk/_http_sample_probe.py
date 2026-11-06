@@ -52,7 +52,9 @@ class _Exchange:
                 return line
             if len(self.buffer) > _MAX_LINE:
                 raise ValueError
-            chunk = self.connection.recv(min(4096, _MAX_LINE + 2 - len(self.buffer)))
+            # Framing is read byte by byte: a coalesced response must not read
+            # application payload ahead of the independently installed cap.
+            chunk = self.connection.recv(1)
             if not chunk:
                 raise ValueError
             self.buffer.extend(chunk)
@@ -82,7 +84,7 @@ class _Exchange:
                 raise ValueError
             fields.append((name.lower(), value.strip(b" \t")))
 
-    def body_size(self, status, fields, cap):
+    def body_size(self, version, status, fields, cap):
         lengths = [value for name, value in fields if name == b"content-length"]
         transfers = [value for name, value in fields if name == b"transfer-encoding"]
         if len(lengths) > 1 or len(transfers) > 1 or lengths and transfers:
@@ -91,8 +93,10 @@ class _Exchange:
             raise ValueError
         if transfers and transfers[0].lower() != b"chunked":
             raise ValueError
+        if transfers and version == b"1.0":
+            raise ValueError
         if status in (204, 304):
-            if transfers or status == 204 and lengths and int(lengths[0]) != 0:
+            if transfers or status == 204 and lengths:
                 raise ValueError
             return 0
         if lengths:
@@ -142,13 +146,13 @@ def _probe(entry, deadline):
         connection.sendall(b"GET " + path + b" HTTP/1.1\r\nHost: 127.0.0.1:" +
             str(entry.container_port).encode("ascii") + b"\r\nConnection: close\r\n\r\n")
         line = exchange.line()
-        match = re.fullmatch(rb"HTTP/1\.[01] ([2-5][0-9]{2}) [\t\x20-\x7e]*", line)
+        match = re.fullmatch(rb"HTTP/(1\.[01]) ([2-5][0-9]{2}) [\t\x20-\x7e]*", line)
         if match is None:
             raise ValueError
-        status = int(match[1])
+        version, status = match[1], int(match[2])
         fields = exchange.headers()
         cap = entry.check.policy.maximum_evidence_bytes
-        count = exchange.body_size(status, fields, cap)
+        count = exchange.body_size(version, status, fields, cap)
         exchange.remaining()
         outcome = (VerificationOutcome.MALFORMED if count > cap else
                    VerificationOutcome.PASSED if status in entry.check.expected_statuses else

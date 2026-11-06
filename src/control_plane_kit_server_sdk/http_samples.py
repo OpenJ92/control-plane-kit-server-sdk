@@ -6,6 +6,8 @@ import math
 import time
 
 import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from control_plane_kit_core import DelegationKeyPurpose
 from control_plane_kit_core.http_verification_samples import (
     HttpVerificationSampleGrantCodec, HttpVerificationSampleResult,
@@ -40,6 +42,10 @@ class HttpVerificationSampleReceiver:
                 raise ValueError
             for entry in self.binding.checks:
                 _safe_path(entry.check.path)
+            for key in self.binding.configuration.verifier.public_keys:
+                parsed = serialization.load_pem_public_key(key.public_key_pem.encode("ascii"))
+                if not isinstance(parsed, Ed25519PublicKey):
+                    raise ValueError
             valid = True
         except Exception:
             valid = False

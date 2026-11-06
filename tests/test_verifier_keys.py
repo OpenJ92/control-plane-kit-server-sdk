@@ -399,12 +399,15 @@ class WorkloadVerifierKeySetTests(unittest.TestCase):
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.glob("*.py")):
             permitted: set[str] = set()
+            if path.name == "http_samples.py":
+                permitted.update({"jwt", "cryptography"})
             if path.name == "verification.py":
                 permitted.add("jwt")
             if path.name in {
                 "_fastapi_variable_routes.py",
                 "_fastapi_surface_routes.py",
                 "_fastapi_health_routes.py",
+                "_fastapi_http_samples.py",
                 "fastapi.py",
             }:
                 permitted.update({"fastapi", "starlette"})

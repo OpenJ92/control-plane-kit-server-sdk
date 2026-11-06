@@ -16,3 +16,5 @@ not replay, process continuity or current graph authority. File limits, opened
 file checks, lifecycle state machine and callback rules remain unchanged.
 
 SDK #78 selects Core976901c and adds explicit http_verification_binding. Its full receiver configuration must equal the effective independently loaded/supplied host configuration; route installers also verify target/declaration. The companion loader shares the regular0444/no-follow/bounded/stable-descriptor reader and requires Core canonical bytes. If the companion environment is present, it must match the supplied binding; a delivered opt-in without independent metadata refuses. It is not an automatic product metadata discovery mechanism. Default sample clock uses unrounded time.time; existing health uses its original integer clock.
+
+Review correction: the sample wall-clock callback is an independent http_sample_clock (default time.time), never inherited from the legacy integer clock argument. Tests exercise signed health and fractional-expiry sampling through the same wrapper.
