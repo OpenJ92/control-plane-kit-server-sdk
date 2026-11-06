@@ -1,0 +1,8 @@
+Source: [tests/test_http_samples.py](../../../tests/test_http_samples.py).
+Maintain this document alongside its source file and relevant imported contracts.
+
+SDK #78 starts with one real-signed wrapper-to-loopback sample through the existing FastAPI entrypoint. Independent Core binding supplies original check and product port; the canonical response is decoded with that original check. The fixture creates ephemeral in-memory keys and a disposable local HTTP service; no credentials or response bodies are printed. The first gate is intended missing-wrapper behavior evidence, not source acceptance.
+
+The implementation candidate adds real signed scope/purpose/time/framing denial before local I/O, service500/302, exact-cap/observed-overflow, same-audience cross-wired receivers/declarations with explicit/file-backed atomic refusal, threaded stdlib preservation/single-thread refusal, unsafe path, complete/truncated/ambiguous/chunked framing, absolute header/body-trickle deadlines with socket closure, fractional grant time and companion-file refusal. Helpers launch only disposable loopback services inside the owning Docker suite. Counts/results belong to issue evidence, not this source note.
+
+Review regressions additionally cover forbidden HTTP1.0 transfer coding/204 lengths, a deterministic coalesced socket double measuring actual consumed payload bytes at cap1 for headers and chunks, mixed usable/malformed/RSA installed keys before publication, and legacy signed health with an independent fractional sample clock. The one original application-response helper error was corrected to inspect its preserved ordinary201 response, which need not carry SDK-owned Connection framing.

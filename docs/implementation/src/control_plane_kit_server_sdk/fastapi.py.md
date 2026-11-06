@@ -40,3 +40,5 @@ admission/result construction. An empty declaration uses only surface routes;
 a declaration's profile alone does not require command authority. App collision,
 publication and lifespan algorithms are unchanged. Historical live target and
 configuration types refuse setup.
+
+SDK #78 adds an opt-in sample receiver to the existing atomic installer and an explicit http_verification_binding to install_cpk_wrapper. Shared validation requires exact host target/declaration equality; route construction appends only Core’s fixed sample route. One publication and existing collision/lifespan behavior remain. The sample route performs blocking work off-loop. Unopted installations preserve their prior route set.

@@ -16,6 +16,7 @@ from control_plane_kit_server_sdk._http_framing import (
     _ERROR_BODIES, _MAX_BODY_BYTES, _MAX_PATH_BYTES,
     _RequestInvalid, _RequestTooLarge, _credential,
 )
+from control_plane_kit_server_sdk.http_samples import HttpVerificationSampleCredentialError
 from control_plane_kit_server_sdk.verification import (
     WorkloadNodeControlVerificationError, WorkloadNodeHealthReadVerificationError,
 )
@@ -141,10 +142,16 @@ def _dispatch(handler: object, control: _PreparedControlDispatch) -> None:
         b"/__control/status": NodeControlSurfaceReadKind.STATUS,
     }
     kind = static_paths.get(target)
+    sample = target == b"/__control/verification/http"
     health_kind = None
     operation = None
     variable = None
     if kind is not None:
+        expected_method = b"GET"
+    elif sample:
+        if control.http_sample_receiver is None:
+            _error(handler, 404)
+            return
         expected_method = b"GET"
     elif target in (b"/__control/health/liveness", b"/__control/health/readiness"):
         if control.health_dispatcher is None:
@@ -189,6 +196,8 @@ def _dispatch(handler: object, control: _PreparedControlDispatch) -> None:
                 declaration=control.declaration, installed_variable_names=control.installed_variable_names,
                 verifier=control.surface_read_verifier,
             )
+        elif sample:
+            status, body = 200, control.http_sample_receiver.read(credential)
         elif health_kind is not None:
             result = control.health_dispatcher.read(credential, route_kind=health_kind, candidate=None)
             status, body = 200, result.canonical_bytes()
@@ -199,7 +208,7 @@ def _dispatch(handler: object, control: _PreparedControlDispatch) -> None:
                 declaration=control.declaration,
                 verifier=control.command_verifier, replay=control.replay,
             )
-    except WorkloadNodeHealthReadVerificationError:
+    except (WorkloadNodeHealthReadVerificationError, HttpVerificationSampleCredentialError):
         _error(handler, 401)
         return
     except Exception:

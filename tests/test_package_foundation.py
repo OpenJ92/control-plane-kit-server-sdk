@@ -16,7 +16,7 @@ PACKAGE_ROOT = SOURCE_ROOT / "control_plane_kit_server_sdk"
 CORE_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "7afef43f3d3b981094e37dcb3062b6e3a4f3d674.zip"
+    "976901c609d950a557ec1e9966f018e8ff6e16aa.zip"
     "#subdirectory=control-plane-kit-core"
 )
 VERIFICATION_DEPENDENCIES = [
@@ -146,12 +146,15 @@ for name in (
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.rglob("*.py")):
             permitted: set[str] = set()
+            if path.name == "http_samples.py":
+                permitted.update({"jwt", "cryptography"})
             if path.name == "verification.py":
                 permitted.add("jwt")
             if path.name in {
                 "_fastapi_variable_routes.py",
                 "_fastapi_surface_routes.py",
                 "_fastapi_health_routes.py",
+                "_fastapi_http_samples.py",
                 "fastapi.py",
             }:
                 permitted.update({"fastapi", "starlette"})
@@ -176,7 +179,7 @@ for name in (
             "pip install .",
             "control_plane_kit_server_sdk",
             "__version__",
-            "7afef43f3d3b981094e37dcb3062b6e3a4f3d674",
+            "976901c609d950a557ec1e9966f018e8ff6e16aa",
             "not published",
         ):
             with self.subTest(required=required):

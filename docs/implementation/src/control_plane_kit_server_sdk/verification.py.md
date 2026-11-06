@@ -5,7 +5,7 @@ The optional owner now admits three disjoint credential families: variable comma
 
 Health uses CPK-WORKLOAD-NODE-HEALTH-READ+JWT and the closed workload_node_health_read payload. One exact-purpose atomic snapshot selects one Ed25519 key. Duplicate-aware bounded JSON and canonical base64url inspection precede maintained PyJWT verification; authenticated outer/embedded/header claims must agree. One supplied safe-integer clock and Core's predicate compare half-open time and independently supplied receiver target (including runtime), V2 declaration and actual kind. candidate must be exactly None; transport bodylessness belongs to the FastAPI or stdlib adapter.
 
-The selected Core is 7afef43f3d3b981094e37dcb3062b6e3a4f3d674; its signed receiver/grant contracts are unchanged from the prior selection. The operations HTTP, parity and projection additions do not alter this verifier's inputs. Health reconstructs only the candidate from authenticated claims, never expected local authority. It returns ordinary Core ReceiverHealthReadRequest, adds no callback, replay store, provider effect, key custody or graph/attempt approval proof. Repeated admission preserves observation identity.
+The selected Core is 976901c609d950a557ec1e9966f018e8ff6e16aa; its existing signed receiver/health grant contracts remain unchanged. Additive HTTP sample contracts are consumed by their separate owner. Health reconstructs only the candidate from authenticated claims, never expected local authority. It returns ordinary Core ReceiverHealthReadRequest, adds no callback, replay store, provider effect, key custody or graph/attempt approval proof. Repeated admission preserves observation identity.
 
 Maximum canonical compact health material is 4178 bytes; admission bounds total4608 and segments512/3968/128 also permit bounded JSON whitespace. The shared walker retains depth16/member64 limits. Ordinary failures become fixed errors raised outside handlers without exception links; BaseException propagates. Reprs omit key/issuer/audience. SDK #23 owns callback and FastAPI composition. See decision0015 and the health admission tests; owning gate results belong in the PR, not inferred from this note.
 
@@ -49,3 +49,5 @@ must agree even if Core reports a local scope mismatch first. Invalid binding
 remains 401 and never reaches callbacks or replay. Surface requests reconstruct
 those fields directly from the authenticated grant. Both public exception
 families retain fixed messages and no candidate diagnostics.
+
+SDK #78 selects Core976901c. Existing three verifier implementations remain unchanged. The dedicated new sample family lives in optional http_samples.py and reuses only private compact/duplicate-aware parsing helpers; its signature, installed binding and probe are separate. No V2 key-purpose substitution is introduced.

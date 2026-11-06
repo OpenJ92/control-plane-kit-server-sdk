@@ -1,0 +1,4 @@
+Source: [src/control_plane_kit_server_sdk/_fastapi_http_samples.py](../../../../src/control_plane_kit_server_sdk/_fastapi_http_samples.py).
+Maintain this document alongside its source and relevant imported contracts.
+
+Private fixed Core GET /__control/verification/http route, built only by the atomic installer. Exact raw path/method, empty query/body, bounded single Bearer, no transfer encoding/Expect and canonical zero Content-Length precede receiver admission. Blocking verification/probe/result work runs in a worker, not on the event loop. Semantic correlated results use200; fixed nonsemantic400/401/413/500 errors and all owned responses are no-store. Inbound request-stream scheduling is inherited from the host; the absolute deadline belongs to the subsequent local HTTP exchange. No listener or request-derived local authority is added.

@@ -38,6 +38,7 @@ from control_plane_kit_server_sdk.verification import (
 )
 from control_plane_kit_server_sdk._http_framing import _ERROR_BODIES
 from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
+from control_plane_kit_server_sdk.http_samples import HttpVerificationSampleReceiver
 
 _READ_RESULTS = (NodeControlReadStateSucceeded, NodeControlRejected, NodeControlFailed)
 _APPLY_RESULTS = (NodeControlTransitionSucceeded, NodeControlRejected, NodeControlFailed)
@@ -55,11 +56,13 @@ class _PreparedControlDispatch:
     surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier = field(repr=False)
     health_dispatcher: WorkloadNodeHealthReadDispatcher | None = field(repr=False)
     replay: _ProcessLocalNodeControlReplay | None = field(repr=False)
+    http_sample_receiver: HttpVerificationSampleReceiver | None = field(default=None, repr=False)
 
 
 def _validate_control_configuration(
     *, target: object, declaration: object, variables: object,
     command_verifier: object, surface_read_verifier: object, health_dispatcher: object,
+    http_sample_receiver: object = None,
 ) -> tuple[bool, bool]:
     """Validate without invoking descriptors, before host collision checks."""
     if (
@@ -70,6 +73,10 @@ def _validate_control_configuration(
         or target.provider_socket_name != declaration.surface.provider_socket_name
     ):
         raise ValueError
+    if http_sample_receiver is not None:
+        if type(http_sample_receiver) is not HttpVerificationSampleReceiver:
+            raise ValueError
+        http_sample_receiver.require_host(target, declaration)
     has_health = bool(declaration.surface.health_reads)
     has_variables = bool(declaration.surface.variables)
     if has_health:
@@ -94,11 +101,12 @@ def _prepare_control_dispatch(
     variables: tuple[object, ...], command_verifier: Ed25519WorkloadNodeControlVerifier | None,
     surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,
     health_dispatcher: WorkloadNodeHealthReadDispatcher | None,
+    http_sample_receiver: HttpVerificationSampleReceiver | None = None,
 ) -> _PreparedControlDispatch:
     has_variables, _ = _validate_control_configuration(
         target=target, declaration=declaration, variables=variables,
         command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
-        health_dispatcher=health_dispatcher,
+        health_dispatcher=health_dispatcher, http_sample_receiver=http_sample_receiver,
     )
     registry = _build_variable_registry(declaration=declaration, variables=variables)
     installed_variable_names = tuple(
@@ -109,6 +117,7 @@ def _prepare_control_dispatch(
         target, declaration, registry, installed_variable_names,
         command_verifier, surface_read_verifier, health_dispatcher,
         _ProcessLocalNodeControlReplay() if has_variables else None,
+        http_sample_receiver,
     )
 
 

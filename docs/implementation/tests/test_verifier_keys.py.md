@@ -22,3 +22,5 @@ prove producer provenance, execute a signed grant, or demonstrate durable
 rotation. Read [verifier_keys.py](../src/control_plane_kit_server_sdk/verifier_keys.py.md)
 and the selected Core owner before extending key assumptions. Large test-file
 navigation is based on selected behavioral assertions, not a fresh full audit.
+
+SDK #78 names only the dedicated sample crypto owner and FastAPI sample adapter in the existing allowed optional-import inventory. Root exports, base imports and verifier-key laws remain unchanged.

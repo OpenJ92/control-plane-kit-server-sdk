@@ -634,12 +634,14 @@ class FastApiControlRouteTests(unittest.TestCase):
                 "command_verifier",
                 "surface_read_verifier",
                 "health_dispatcher",
+                "http_sample_receiver",
             ),
         )
         self.assertEqual(
             tuple(parameter.kind for parameter in signature.parameters.values()),
             (
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
@@ -661,6 +663,9 @@ class FastApiControlRouteTests(unittest.TestCase):
                 ),
                 "health_dispatcher": (
                     importlib.import_module("control_plane_kit_server_sdk.health").WorkloadNodeHealthReadDispatcher | None
+                ),
+                "http_sample_receiver": (
+                    importlib.import_module("control_plane_kit_server_sdk.http_samples").HttpVerificationSampleReceiver | None
                 ),
                 "return": type(None),
             },

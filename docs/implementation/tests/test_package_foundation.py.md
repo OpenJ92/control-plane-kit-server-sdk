@@ -27,3 +27,5 @@ phrases, including limits on transitive versions, hashes and attestations.
 Presence of those strings does not establish that every historical deferral
 still describes current implementation; the [companion guide](../README.md)
 records that distinction.
+
+SDK #78 updates the existing narrow optional-import owner inventory: only http_samples.py may additionally import PyJWT/cryptography, and only the new FastAPI sample adapter may import FastAPI. Existing base-import subprocess and installed-import prohibitions remain unchanged.

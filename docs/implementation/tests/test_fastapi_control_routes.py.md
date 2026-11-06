@@ -35,3 +35,5 @@ receiver V2/V3 envelopes. Runtime/receiver and independent declaration inputs
 replace graph-bound target structure. Maximal surface result byte ceilings are
 unchanged; overflow now expects the receiver codec's categorical error. Existing
 host, collision, registry, authentication and concurrency assertions remain.
+
+SDK #78 extends the existing exact public installer signature/type inventory with optional http_sample_receiver. Existing behavioral assertions remain; actual opt-in behavior belongs to test_http_samples.py.
