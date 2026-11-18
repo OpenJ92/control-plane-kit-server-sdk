@@ -6,7 +6,7 @@ from typing import Protocol, TypeVar, runtime_checkable
 
 from control_plane_kit_core import (
     ControlPlaneVariableDescriptor,
-    NodeControlCommandRequest,
+    ReceiverNodeControlRequest,
     NodeControlFailed,
     NodeControlReadStateSucceeded,
     NodeControlRejected,
@@ -22,7 +22,7 @@ _ReadResultT_co = TypeVar(
 )
 _CommandT_contra = TypeVar(
     "_CommandT_contra",
-    bound=NodeControlCommandRequest,
+    bound=ReceiverNodeControlRequest,
     contravariant=True,
 )
 _TransitionResultT_co = TypeVar(

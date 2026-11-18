@@ -7,6 +7,8 @@ from pathlib import Path
 from threading import Event, Thread
 import unittest
 
+from tests.receiver_values import receiver_context, receiver_declaration
+
 from control_plane_kit_core import (
     ControlPlaneCommandCodec,
     ControlPlaneResultCodec,
@@ -16,8 +18,8 @@ from control_plane_kit_core import (
     ControlPlaneVariableKind,
     ControlPlaneVariableOperationContract,
     MapControlState,
-    NodeControlCommandRequest,
-    NodeControlCommandRequestCodec,
+    ReceiverNodeControlRequest,
+    ReceiverNodeControlRequestCodec,
     NodeControlEvidenceCode,
     NodeControlFailed,
     NodeControlGraphReference,
@@ -27,7 +29,7 @@ from control_plane_kit_core import (
     NodeControlReadStateSucceeded,
     NodeControlRejected,
     NodeControlResultCodec,
-    NodeControlTarget,
+    NodeControlReceiverTarget,
     NodeControlTransitionSucceeded,
     ScalarControlState,
     WeightedRoutingControlState,
@@ -120,14 +122,15 @@ def _reference(
     return NodeControlGraphReference(role, value)
 
 
-def _target() -> NodeControlTarget:
-    return NodeControlTarget(
+def _target() -> NodeControlReceiverTarget:
+    return NodeControlReceiverTarget(
+        receiver_id="a" * 32,
         workspace_id=_reference(
             NodeControlGraphReferenceRole.WORKSPACE,
             "workspace-1",
         ),
-        graph_revision=_reference(
-            NodeControlGraphReferenceRole.GRAPH_REVISION,
+        runtime_id=_reference(
+            NodeControlGraphReferenceRole.RUNTIME,
             "revision-7",
         ),
         node_id=_reference(NodeControlGraphReferenceRole.NODE, "router"),
@@ -200,8 +203,10 @@ def _read_request(
     *,
     variable: str = "routing",
     request_id: str = "request-read-1",
-) -> NodeControlCommandRequest:
-    return NodeControlCommandRequest(
+) -> ReceiverNodeControlRequest:
+    return ReceiverNodeControlRequest(
+        authority_context=receiver_context(),
+        declaration_identity=receiver_declaration().identity(),
         target=_target(),
         variable_name=_reference(NodeControlGraphReferenceRole.VARIABLE, variable),
         operation=NodeControlOperation.READ_STATE,
@@ -216,14 +221,16 @@ def _apply_request(
     expected_version: int,
     variable: str = "routing",
     request_id: str = "request-apply-1",
-) -> NodeControlCommandRequest:
+) -> ReceiverNodeControlRequest:
     if type(state) is ScalarControlState:
         codec = ControlPlaneCommandCodec.REPLACE_SCALAR_V1
     elif type(state) is MapControlState:
         codec = ControlPlaneCommandCodec.REPLACE_MAP_V1
     else:
         codec = ControlPlaneCommandCodec.REPLACE_WEIGHTED_ROUTING_V1
-    return NodeControlCommandRequest(
+    return ReceiverNodeControlRequest(
+        authority_context=receiver_context(),
+        declaration_identity=receiver_declaration().identity(),
         target=_target(),
         variable_name=_reference(NodeControlGraphReferenceRole.VARIABLE, variable),
         operation=NodeControlOperation.APPLY_COMMAND,
@@ -362,14 +369,13 @@ class AtomicControlPlaneVariableTests(unittest.TestCase):
 
     def test_variable_reference_equality_failure_is_translated_without_context(self) -> None:
         atomic_type = self._atomic_type()
-        descriptor = _descriptor()
-        variable = atomic_type(descriptor, ScalarControlState("target-a"))
         hostile_name = NonBooleanEqualityText("routing")
-        read = _read_request(variable=hostile_name, request_id="hostile-read")
+        descriptor = _descriptor(variable=hostile_name)
+        variable = atomic_type(descriptor, ScalarControlState("target-a"))
+        read = _read_request(request_id="hostile-read")
         apply = _apply_request(
             ScalarControlState("target-b"),
             expected_version=0,
-            variable=hostile_name,
             request_id="hostile-apply",
         )
 
@@ -395,8 +401,8 @@ class AtomicControlPlaneVariableTests(unittest.TestCase):
             ScalarControlState("target-b"),
             expected_version=4,
         )
-        equal_request = NodeControlCommandRequestCodec().decode(
-            NodeControlCommandRequestCodec().encode(valid)
+        equal_request = ReceiverNodeControlRequestCodec().decode(
+            ReceiverNodeControlRequestCodec().encode(valid)
         )
         self.assertEqual(equal_request, valid)
         self.assertIsNot(equal_request, valid)
@@ -645,8 +651,8 @@ class AtomicControlPlaneVariableTests(unittest.TestCase):
         hostile = MapControlState((("active", ExplodingEqualityText("target-b")),))
 
         mismatch = _apply_request(hostile, expected_version=2, request_id="mismatch")
-        equal_copy = NodeControlCommandRequestCodec().decode(
-            NodeControlCommandRequestCodec().encode(mismatch)
+        equal_copy = ReceiverNodeControlRequestCodec().decode(
+            ReceiverNodeControlRequestCodec().encode(mismatch)
         )
         identity_result = variable.apply(equal_copy, ControlPlaneInvocationContext(mismatch))
         self.assertIs(identity_result.evidence.code, NodeControlEvidenceCode.INVALID_COMMAND)

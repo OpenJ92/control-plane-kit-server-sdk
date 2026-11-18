@@ -7,18 +7,23 @@ from fastapi.routing import APIRoute, APIRouter, APIWebSocketRoute
 from starlette.routing import Host, Mount, Route, WebSocketRoute
 
 from control_plane_kit_core import (
-    NodeControlTarget,
+    NodeControlReceiverTarget,
     WorkloadNodeControlSurfaceDeclaration,
 )
-from control_plane_kit_core.control_routes import NODE_CONTROL_ROUTES
+from control_plane_kit_core.control_routes import NODE_CONTROL_ROUTES, NODE_HEALTH_ROUTES, HTTP_VERIFICATION_SAMPLE_ROUTES
+from control_plane_kit_server_sdk._fastapi_health_routes import _build_health_routes
+from control_plane_kit_server_sdk._fastapi_http_samples import _build_http_sample_routes
+from control_plane_kit_server_sdk.http_samples import HttpVerificationSampleReceiver
+from control_plane_kit_server_sdk.health import WorkloadNodeHealthReadDispatcher
 from control_plane_kit_server_sdk._fastapi_surface_routes import (
     _build_surface_routes,
 )
 from control_plane_kit_server_sdk._fastapi_variable_routes import (
-    _build_variable_registry,
     _build_variable_routes_from_registry,
 )
-from control_plane_kit_server_sdk._replay import _ProcessLocalNodeControlReplay
+from control_plane_kit_server_sdk._control_dispatch import (
+    _prepare_control_dispatch, _validate_control_configuration,
+)
 from control_plane_kit_server_sdk.verification import (
     Ed25519WorkloadNodeControlSurfaceReadVerifier,
     Ed25519WorkloadNodeControlVerifier,
@@ -61,14 +66,21 @@ def _route_is_disjoint(route: object) -> bool:
     return False
 
 
-def _canonical_route_shape(routes: tuple[object, ...]) -> bool:
+def _canonical_route_shape(
+    routes: tuple[object, ...], *, variables: bool, health: bool, http_sample: bool = False,
+) -> bool:
     observed = tuple(
         (route.name, next(iter(route.methods)), route.path)
         for route in routes
     )
+    declarations = NODE_CONTROL_ROUTES.routes if variables else NODE_CONTROL_ROUTES.routes[:2]
+    if health:
+        declarations = (*declarations, *NODE_HEALTH_ROUTES.routes)
+    if http_sample:
+        declarations = (*declarations, *HTTP_VERIFICATION_SAMPLE_ROUTES.routes)
     expected = tuple(
         (route.name, route.method.value, route.path)
-        for route in NODE_CONTROL_ROUTES.routes
+        for route in declarations
     )
     return observed == expected
 
@@ -80,21 +92,21 @@ def _prepare_installation(
     variables: object,
     command_verifier: object,
     surface_read_verifier: object,
+    health_dispatcher: object,
+    http_sample_receiver: object,
 ) -> tuple[list[object], tuple[object, ...]]:
     if (
         type(app) is not fastapi.FastAPI
         or type(app.router) is not APIRouter
         or type(app.router.routes) is not list
         or app.middleware_stack is not None
-        or type(target) is not NodeControlTarget
-        or type(declaration) is not WorkloadNodeControlSurfaceDeclaration
-        or type(variables) is not tuple
-        or type(command_verifier) is not Ed25519WorkloadNodeControlVerifier
-        or type(surface_read_verifier)
-        is not Ed25519WorkloadNodeControlSurfaceReadVerifier
-        or target.provider_socket_name != declaration.surface.provider_socket_name
     ):
         raise ValueError
+    has_variables, has_health = _validate_control_configuration(
+        target=target, declaration=declaration, variables=variables,
+        command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
+        health_dispatcher=health_dispatcher, http_sample_receiver=http_sample_receiver,
+    )
 
     prior_routes = app.router.routes
     if any(
@@ -105,25 +117,23 @@ def _prepare_installation(
     if any(not _route_is_disjoint(route) for route in prior_routes):
         raise _RouteCollision
 
-    registry = _build_variable_registry(
-        declaration=declaration,
-        variables=variables,
+    control = _prepare_control_dispatch(
+        target=target, declaration=declaration, variables=variables,
+        command_verifier=command_verifier, surface_read_verifier=surface_read_verifier,
+        health_dispatcher=health_dispatcher, http_sample_receiver=http_sample_receiver,
     )
-    replay = _ProcessLocalNodeControlReplay()
-    surface_routes = _build_surface_routes(
-        target=target,
-        declaration=declaration,
-        registry=registry,
-        verifier=surface_read_verifier,
-    )
-    variable_routes = _build_variable_routes_from_registry(
-        target=target,
-        registry=registry,
-        verifier=command_verifier,
-        replay=replay,
-    )
-    routes = (*surface_routes, *variable_routes)
-    if len(routes) != 4 or not _canonical_route_shape(routes):
+    surface_routes = _build_surface_routes(control=control)
+    variable_routes = ()
+    if has_variables:
+        variable_routes = _build_variable_routes_from_registry(
+            target=control.target, declaration=control.declaration,
+            registry=control.registry, verifier=control.command_verifier,
+            replay=control.replay,
+        )
+    health_routes = _build_health_routes(dispatcher=control.health_dispatcher) if has_health else ()
+    sample_routes = _build_http_sample_routes(control.http_sample_receiver) if http_sample_receiver is not None else ()
+    routes = (*surface_routes, *variable_routes, *health_routes, *sample_routes)
+    if not _canonical_route_shape(routes, variables=has_variables, health=has_health, http_sample=http_sample_receiver is not None):
         raise ValueError
     for route in routes:
         setattr(route, _MARKER_ATTRIBUTE, _MARKER)
@@ -133,11 +143,13 @@ def _prepare_installation(
 def install_cpk_control_routes(
     app: fastapi.FastAPI,
     *,
-    target: NodeControlTarget,
+    target: NodeControlReceiverTarget,
     declaration: WorkloadNodeControlSurfaceDeclaration,
-    variables: tuple[object, ...],
-    command_verifier: Ed25519WorkloadNodeControlVerifier,
+    variables: tuple[object, ...] = (),
+    command_verifier: Ed25519WorkloadNodeControlVerifier | None = None,
     surface_read_verifier: Ed25519WorkloadNodeControlSurfaceReadVerifier,
+    health_dispatcher: WorkloadNodeHealthReadDispatcher | None = None,
+    http_sample_receiver: HttpVerificationSampleReceiver | None = None,
 ) -> None:
     """Install the exact CPK route family with one host-app mutation."""
 
@@ -151,6 +163,8 @@ def install_cpk_control_routes(
             variables,
             command_verifier,
             surface_read_verifier,
+            health_dispatcher,
+            http_sample_receiver,
         )
     except _AlreadyInstalled:
         category = "installed"
@@ -169,4 +183,35 @@ def install_cpk_control_routes(
     app.router.routes = [*prior_routes, *routes]
 
 
-__all__ = ["install_cpk_control_routes"]
+
+def install_cpk_wrapper(app: fastapi.FastAPI, *, configuration=None, clock=None,
+                        variables: tuple[object, ...] = (), liveness=None, readiness=None, http_verification_binding=None, http_sample_clock=None) -> None:
+    """Load delivered configuration and compose baseline health with app lifespan."""
+    from contextlib import asynccontextmanager
+    from control_plane_kit_server_sdk.wrapper import _prepare_wrapper
+
+    wrapper = _prepare_wrapper(configuration=configuration, clock=clock, liveness=liveness, readiness=readiness, http_verification_binding=http_verification_binding, http_sample_clock=http_sample_clock)
+    # Do not publish lifespan changes until the existing atomic installer succeeds.
+    # Read the original lifespan only for a supported host, before publication.
+    if type(app) is not fastapi.FastAPI or type(app.router) is not APIRouter:
+        raise ValueError("FastAPI control route installation is invalid")
+    original = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(host):
+        epoch = wrapper.lifecycle.begin()
+        try:
+            async with original(host) as state:
+                wrapper.lifecycle.serving(epoch)
+                try:
+                    yield state
+                finally:
+                    wrapper.lifecycle.stop()
+        finally:
+            wrapper.lifecycle.finish(epoch)
+
+    install_cpk_control_routes(app, variables=variables, **wrapper.settings)
+    app.router.lifespan_context = lifespan
+
+
+__all__ = ["install_cpk_control_routes", "install_cpk_wrapper"]

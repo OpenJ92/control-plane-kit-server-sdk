@@ -1,0 +1,18 @@
+Source: [src/control_plane_kit_server_sdk/stdlib.py](../../../../src/control_plane_kit_server_sdk/stdlib.py).
+Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+The public verification-extra installer validates exact standard IPv4 HTTP server and unbound/nonlistening socket state, explicit namespace reservation, unchanged low-level handler hooks, configuration and marker before preparation. It captures the accepted shared context per server and publishes one derived handler class. The original application class/server state is preserved. No bind/start/thread/callback occurs during installation; invalid preparation raises a fixed context-free error without publication.
+
+Generated parse/Expect/error hooks reserve control before application dispatch and use the host's Latin-1 lexical boundaries before path normalization. Only exact HTTP/1.0 or 1.1 three-word control requests proceed. Other versions receive fixed direct framing rather than HTTP/0.9 suppression. An exact server-identity guard prevents copied handlers reusing authority. Disjoint application calls delegate through the original implementation; protected parser/Expect failures never call application logging. See the private request owner and decision0018 for framing, deadlines and compatibility limits. Product code owns every listener/process lifetime operation.
+
+SDK38 adds the exact SDK-owned `CpkHTTPServer` and `CpkThreadingHTTPServer` types to accepted hosts and provides automatic setup/lifecycle through their public stdlib hooks. Configuration is validated before socket creation; control installation happens while unbound, before optional normal bind/activate. Installation or bind failure closes the constructed socket and preserves the original exception. Products still decide listener address, when to run/stop and process lifetime; these helpers observe those operations instead of requiring callbacks or manual ready marking.
+
+`serve_forever` brackets the ordinary loop, `service_actions` witnesses entry into service, and `shutdown`/`server_close` clear readiness before delegation. A stopping phase cannot be resurrected by late hooks. `cpk_is_serving` is read-only observation, not business readiness or draining. Standard shutdown caller-thread constraints and threading semantics remain. Arbitrary subclasses remain unsupported by passive installation. The passive installer itself still never binds or starts a host. Actual signed loopback tests cover both classes and deterministic shutdown overlap.
+
+SDK #43 changes the captured target to NodeControlReceiverTarget and automatic
+setup to receiver configuration V2. The same shared dispatcher verifies receiver
+requests and emits correlated health V2, surface V3 and command V2 results.
+Installation, raw parser ownership, listener and lifecycle algorithms are
+unchanged; restart reconstructs configuration identity only.
+
+SDK #78 accepts the optional neutral sample receiver through the existing passive installer and a binding through automatic wrappers. Exact host equality precedes publication. Sample opt-in requires ThreadingHTTPServer or CpkThreadingHTTPServer; single-threaded hosts refuse before publication/bind to avoid self-loopback deadlock. Products still own listeners/processes. No implicit thread or listener is created.

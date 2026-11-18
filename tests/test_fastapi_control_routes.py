@@ -17,7 +17,10 @@ import rfc8785
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+from tests.receiver_values import receiver_context, receiver_declaration
+
 from control_plane_kit_core import (
+    DelegatedWorkloadReceiverNodeControlGrantProfile,
     ControlPlaneCommandCodec,
     ControlPlaneResultCodec,
     ControlPlaneStateCodec,
@@ -25,14 +28,14 @@ from control_plane_kit_core import (
     ControlPlaneVariableDescriptor,
     ControlPlaneVariableKind,
     ControlPlaneVariableOperationContract,
-    DelegatedWorkloadNodeControlGrant,
-    DelegatedWorkloadNodeControlSurfaceReadGrant,
-    DelegatedWorkloadNodeControlSurfaceReadGrantProfile,
+    DelegatedWorkloadReceiverNodeControlGrant,
+    DelegatedWorkloadReceiverControlSurfaceReadGrant,
+    DelegatedWorkloadReceiverControlSurfaceReadGrantProfile,
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
     DelegationPublicKey,
     NodeControlCanonicalization,
-    NodeControlCommandRequest,
+    ReceiverNodeControlRequest,
     NodeControlEvidence,
     NodeControlEvidenceCode,
     NodeControlGraphReference,
@@ -40,12 +43,12 @@ from control_plane_kit_core import (
     NodeControlOperation,
     NodeControlPayload,
     NodeControlReadStateSucceeded,
-    NodeControlResultCodec,
+    ReceiverNodeControlResultCodec,
     NodeControlSurfaceReadKind,
-    NodeControlSurfaceReadContractError,
-    NodeControlSurfaceReadRequest,
-    NodeControlSurfaceReadResultCodec,
-    NodeControlTarget,
+    ReceiverControlSurfaceReadContractError,
+    ReceiverControlSurfaceReadRequest,
+    ReceiverControlSurfaceReadResultCodec,
+    NodeControlReceiverTarget,
     NodeControlTransitionSucceeded,
     MAX_NODE_CONTROL_SURFACE_CAPABILITIES_RESULT_BYTES,
     MAX_NODE_CONTROL_SURFACE_STATUS_RESULT_BYTES,
@@ -83,14 +86,15 @@ def _reference(
     return NodeControlGraphReference(role, value)
 
 
-def _target(**changes: object) -> NodeControlTarget:
+def _target(**changes: object) -> NodeControlReceiverTarget:
     values: dict[str, object] = {
+        "receiver_id": "a" * 32,
         "workspace_id": _reference(
             NodeControlGraphReferenceRole.WORKSPACE,
             "workspace-1",
         ),
-        "graph_revision": _reference(
-            NodeControlGraphReferenceRole.GRAPH_REVISION,
+        "runtime_id": _reference(
+            NodeControlGraphReferenceRole.RUNTIME,
             "revision-7",
         ),
         "node_id": _reference(NodeControlGraphReferenceRole.NODE, "router"),
@@ -100,7 +104,7 @@ def _target(**changes: object) -> NodeControlTarget:
         ),
     }
     values.update(changes)
-    return NodeControlTarget(**values)
+    return NodeControlReceiverTarget(**values)
 
 
 def _descriptor(
@@ -202,10 +206,11 @@ def _surface_request(
     declaration: WorkloadNodeControlSurfaceDeclaration,
     kind: NodeControlSurfaceReadKind,
     *,
-    target: NodeControlTarget | None = None,
+    target: NodeControlReceiverTarget | None = None,
     request_id: str = "surface-read-1",
-) -> NodeControlSurfaceReadRequest:
-    return NodeControlSurfaceReadRequest(
+) -> ReceiverControlSurfaceReadRequest:
+    return ReceiverControlSurfaceReadRequest(
+        authority_context=receiver_context(),
         target=_target() if target is None else target,
         kind=kind,
         declaration_identity=declaration.identity(),
@@ -214,16 +219,17 @@ def _surface_request(
 
 
 def _surface_grant(
-    request: NodeControlSurfaceReadRequest,
-) -> DelegatedWorkloadNodeControlSurfaceReadGrant:
-    return DelegatedWorkloadNodeControlSurfaceReadGrant(
-        profile=DelegatedWorkloadNodeControlSurfaceReadGrantProfile.V1,
+    request: ReceiverControlSurfaceReadRequest,
+) -> DelegatedWorkloadReceiverControlSurfaceReadGrant:
+    return DelegatedWorkloadReceiverControlSurfaceReadGrant(
+        profile=DelegatedWorkloadReceiverControlSurfaceReadGrantProfile.V2,
         canonicalization=NodeControlCanonicalization.JCS_RFC8785_V1,
         purpose=DelegationKeyPurpose.WORKLOAD_NODE_CONTROL_SURFACE_READ,
         issuer=ISSUER,
         key_id="surface-key-a",
         audience=AUDIENCE,
         target=request.target,
+        authority_context=request.authority_context,
         kind=request.kind,
         declaration_identity=request.declaration_identity,
         request_id=request.request_id,
@@ -237,7 +243,7 @@ def _surface_grant(
 
 def _surface_token(
     private_key: ed25519.Ed25519PrivateKey,
-    request: NodeControlSurfaceReadRequest,
+    request: ReceiverControlSurfaceReadRequest,
 ) -> bytes:
     grant = _surface_grant(request)
     header = {
@@ -263,13 +269,16 @@ def _surface_token(
 def _command_request(
     operation: NodeControlOperation,
     *,
-    target: NodeControlTarget | None = None,
+    target: NodeControlReceiverTarget | None = None,
     variable: str = "routing",
     request_id: str = "command-request-1",
     idempotency_key: str = "command-key-1",
-) -> NodeControlCommandRequest:
+    declaration: WorkloadNodeControlSurfaceDeclaration | None = None,
+) -> ReceiverNodeControlRequest:
     values: dict[str, object] = {
         "target": _target() if target is None else target,
+        "authority_context": receiver_context(),
+        "declaration_identity": (_declaration(variable) if declaration is None else declaration).identity(),
         "variable_name": _reference(
             NodeControlGraphReferenceRole.VARIABLE,
             variable,
@@ -287,18 +296,21 @@ def _command_request(
                 ScalarControlState("blue"),
             ),
         )
-    return NodeControlCommandRequest(**values)
+    return ReceiverNodeControlRequest(**values)
 
 
 def _command_token(
     private_key: ed25519.Ed25519PrivateKey,
-    request: NodeControlCommandRequest,
+    request: ReceiverNodeControlRequest,
 ) -> bytes:
-    grant = DelegatedWorkloadNodeControlGrant(
+    grant = DelegatedWorkloadReceiverNodeControlGrant(
+        profile=DelegatedWorkloadReceiverNodeControlGrantProfile.V2,
+        declaration_identity=request.declaration_identity,
         issuer=ISSUER,
         key_id="workload-key-a",
         audience=AUDIENCE,
         target=request.target,
+        authority_context=request.authority_context,
         variable_name=request.variable_name,
         operation=request.operation,
         command_codec=request.command_codec,
@@ -476,7 +488,7 @@ class FastApiControlRouteTests(unittest.TestCase):
         *,
         declaration: WorkloadNodeControlSurfaceDeclaration,
         variables: tuple[object, ...],
-        target: NodeControlTarget | None = None,
+        target: NodeControlReceiverTarget | None = None,
         command_verifier: object | None = None,
         surface_verifier: object | None = None,
     ) -> None:
@@ -486,7 +498,7 @@ class FastApiControlRouteTests(unittest.TestCase):
             declaration=declaration,
             variables=variables,
             command_verifier=(
-                self._command_verifier()
+                (self._command_verifier() if declaration.surface.variables else None)
                 if command_verifier is None
                 else command_verifier
             ),
@@ -562,7 +574,7 @@ class FastApiControlRouteTests(unittest.TestCase):
         declaration: WorkloadNodeControlSurfaceDeclaration,
         kind: NodeControlSurfaceReadKind,
         **request_changes: object,
-    ) -> tuple[NodeControlSurfaceReadRequest, int, bytes]:
+    ) -> tuple[ReceiverControlSurfaceReadRequest, int, bytes]:
         request = _surface_request(declaration, kind, **request_changes)
         token = _surface_token(self.surface_private, request)
         path = (
@@ -583,7 +595,7 @@ class FastApiControlRouteTests(unittest.TestCase):
     async def _command_call(
         self,
         app,
-        request: NodeControlCommandRequest,
+        request: ReceiverNodeControlRequest,
     ) -> tuple[int, bytes]:
         if request.operation is NodeControlOperation.READ_STATE:
             method = "GET"
@@ -609,7 +621,7 @@ class FastApiControlRouteTests(unittest.TestCase):
 
     def test_public_optional_module_signature_and_exact_dependency_truth(self) -> None:
         module = self._module()
-        self.assertEqual(module.__all__, ["install_cpk_control_routes"])
+        self.assertEqual(module.__all__, ["install_cpk_control_routes", "install_cpk_wrapper"])
         function = module.install_cpk_control_routes
         signature = inspect.signature(function)
         self.assertEqual(
@@ -621,6 +633,8 @@ class FastApiControlRouteTests(unittest.TestCase):
                 "variables",
                 "command_verifier",
                 "surface_read_verifier",
+                "health_dispatcher",
+                "http_sample_receiver",
             ),
         )
         self.assertEqual(
@@ -632,18 +646,26 @@ class FastApiControlRouteTests(unittest.TestCase):
                 inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
                 inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.KEYWORD_ONLY,
             ),
         )
         self.assertEqual(
             get_type_hints(function),
             {
                 "app": importlib.import_module("fastapi").FastAPI,
-                "target": NodeControlTarget,
+                "target": NodeControlReceiverTarget,
                 "declaration": WorkloadNodeControlSurfaceDeclaration,
                 "variables": tuple[object, ...],
-                "command_verifier": Ed25519WorkloadNodeControlVerifier,
+                "command_verifier": Ed25519WorkloadNodeControlVerifier | None,
                 "surface_read_verifier": (
                     Ed25519WorkloadNodeControlSurfaceReadVerifier
+                ),
+                "health_dispatcher": (
+                    importlib.import_module("control_plane_kit_server_sdk.health").WorkloadNodeHealthReadDispatcher | None
+                ),
+                "http_sample_receiver": (
+                    importlib.import_module("control_plane_kit_server_sdk.http_samples").HttpVerificationSampleReceiver | None
                 ),
                 "return": type(None),
             },
@@ -752,14 +774,14 @@ class FastApiControlRouteTests(unittest.TestCase):
         self.assertEqual(read_status, 200)
         self.assertEqual(
             json.loads(read_body),
-            NodeControlResultCodec(_descriptor("routing")).encode(
+            ReceiverNodeControlResultCodec(read, declaration).result(
                 NodeControlReadStateSucceeded(
                     read.request_id,
                     ControlPlaneStateCodec.SCALAR_V1,
                     1,
                     ScalarControlState("green"),
                 )
-            ),
+            ).descriptor(),
         )
         self.assertEqual(read_variable.read_calls, 1)
 
@@ -804,13 +826,13 @@ class FastApiControlRouteTests(unittest.TestCase):
         self.assertEqual(owner_result[0], 200)
         self.assertEqual(
             json.loads(owner_result[1]),
-            NodeControlResultCodec(_descriptor("routing")).encode(
+            ReceiverNodeControlResultCodec(apply, declaration).result(
                 NodeControlTransitionSucceeded(
                     apply.request_id,
                     2,
                     NodeControlEvidence(NodeControlEvidenceCode.APPLIED),
                 )
-            ),
+            ).descriptor(),
         )
         self.assertEqual((variable.read_calls, variable.apply_calls), (0, 1))
 
@@ -860,7 +882,7 @@ class FastApiControlRouteTests(unittest.TestCase):
             declaration,
             NodeControlSurfaceReadKind.CAPABILITIES,
         )
-        capability_codec = NodeControlSurfaceReadResultCodec(
+        capability_codec = ReceiverControlSurfaceReadResultCodec(
             capability_request,
             declaration,
         )
@@ -876,7 +898,7 @@ class FastApiControlRouteTests(unittest.TestCase):
             NodeControlSurfaceReadKind.STATUS,
             request_id="surface-status-1",
         )
-        status_codec = NodeControlSurfaceReadResultCodec(status_request, declaration)
+        status_codec = ReceiverControlSurfaceReadResultCodec(status_request, declaration)
         self.assertEqual(status_status, 200)
         self.assertEqual(
             status_body,
@@ -1012,15 +1034,15 @@ class FastApiControlRouteTests(unittest.TestCase):
                 MAX_NODE_CONTROL_SURFACE_STATUS_RESULT_BYTES,
             ),
         ):
-            codec = NodeControlSurfaceReadResultCodec(request, declaration)
+            codec = ReceiverControlSurfaceReadResultCodec(request, declaration)
             candidate = {**json.loads(body), "unknown": ""}
             excess = len(rfc8785.dumps(candidate)) - maximum
             self.assertGreater(excess, 1)
             candidate["request_id"] = candidate["request_id"][: -(excess - 1)]
             self.assertEqual(len(rfc8785.dumps(candidate)), maximum + 1)
             with self.assertRaisesRegex(
-                NodeControlSurfaceReadContractError,
-                "aggregate exceeds.*bound",
+                ReceiverControlSurfaceReadContractError,
+                "receiver surface-read value is invalid",
             ):
                 codec.decode(candidate)
 
@@ -1101,7 +1123,7 @@ class FastApiControlRouteTests(unittest.TestCase):
         declaration = _declaration("routing")
         substitutions = (
             replace(_target(), workspace_id=_reference(NodeControlGraphReferenceRole.WORKSPACE, "workspace-2")),
-            replace(_target(), graph_revision=_reference(NodeControlGraphReferenceRole.GRAPH_REVISION, "revision-8")),
+            replace(_target(), runtime_id=_reference(NodeControlGraphReferenceRole.RUNTIME, "revision-8")),
             replace(_target(), node_id=_reference(NodeControlGraphReferenceRole.NODE, "other")),
             replace(_target(), provider_socket_name=_reference(NodeControlGraphReferenceRole.PROVIDER_SOCKET, "other-control")),
         )

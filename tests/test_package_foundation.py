@@ -16,7 +16,7 @@ PACKAGE_ROOT = SOURCE_ROOT / "control_plane_kit_server_sdk"
 CORE_DEPENDENCY = (
     "control-plane-kit-core @ "
     "https://github.com/OpenJ92/control-plane-kit/archive/"
-    "0ee72c3fcdfbee5094357152bdf070fbfc53393c.zip"
+    "68f187710abe8fa89701f403ac76e904b3fec35d.zip"
     "#subdirectory=control-plane-kit-core"
 )
 VERIFICATION_DEPENDENCIES = [
@@ -83,10 +83,12 @@ assert sdk.__all__ == [
     "AtomicControlPlaneVariable",
     "AtomicWorkloadNodeControlSurfaceReadVerifierKeySet",
     "AtomicWorkloadNodeControlVerifierKeySet",
+    "AtomicWorkloadNodeHealthReadVerifierKeySet",
     "ControlPlaneInvocationContext",
     "ControlPlaneVariable",
     "WorkloadNodeControlSurfaceReadVerifierKeySet",
     "WorkloadNodeControlVerifierKeySet",
+    "WorkloadNodeHealthReadVerifierKeySet",
     "__version__",
 ]
 assert sdk.AtomicControlPlaneVariable.__module__ == "control_plane_kit_server_sdk.atomic"
@@ -144,11 +146,15 @@ for name in (
         findings: list[str] = []
         for path in sorted(PACKAGE_ROOT.rglob("*.py")):
             permitted: set[str] = set()
+            if path.name == "http_samples.py":
+                permitted.update({"jwt", "cryptography"})
             if path.name == "verification.py":
                 permitted.add("jwt")
             if path.name in {
                 "_fastapi_variable_routes.py",
                 "_fastapi_surface_routes.py",
+                "_fastapi_health_routes.py",
+                "_fastapi_http_samples.py",
                 "fastapi.py",
             }:
                 permitted.update({"fastapi", "starlette"})
@@ -173,7 +179,7 @@ for name in (
             "pip install .",
             "control_plane_kit_server_sdk",
             "__version__",
-            "0ee72c3fcdfbee5094357152bdf070fbfc53393c",
+            "68f187710abe8fa89701f403ac76e904b3fec35d",
             "not published",
         ):
             with self.subTest(required=required):

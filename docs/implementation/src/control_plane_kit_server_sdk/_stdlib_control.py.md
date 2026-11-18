@@ -1,0 +1,12 @@
+Source: [src/control_plane_kit_server_sdk/_stdlib_control.py](../../../../src/control_plane_kit_server_sdk/_stdlib_control.py).
+Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+This private adapter owns denial-only reservation, duplicate-preserving HTTP input, fixed output framing and selection of existing closed control operations. The bounded classifier preserves raw and intermediate namespace ownership across slash/dot/percent aliases; at most 16 non-growing passes run within the 65536-byte host bound. Exhaustion is terminal even for an eventual non-control path, explicitly limiting compatibility. No projection becomes an admitted path or changes disjoint application input.
+
+Raw canonical paths/methods precede shared byte/Bearer checks. Queries/fragments, Transfer-Encoding, Expect and ambiguous/noncanonical Content-Length reject; reads require zero without body reads, APPLY reads exactly its bounded candidate and EOF fails closed. Static/variable interpretation and health dispatch use their one accepted owners. Errors are fixed nonsemantic node-control codes; successful health bytes remain exact correlated Core values. All control output is HTTP/1.0 JSON with length/no-store/close, omits HEAD bodies and bypasses raw request logging. Disconnect write errors do not retry callbacks. Host buffering, deadlines, concurrency and arbitrary callback cancellation are outside this adapter's guarantees.
+
+SDK #43 forwards the prepared full declaration alongside receiver target to
+shared variable interpretation. That owner now produces correlated V2 envelopes;
+this adapter's framing, disconnection and denial semantics are unchanged.
+
+SDK #78 recognizes only the exact fixed sample GET when the receiver is present, reuses bodyless framing and delegates the credential to its neutral owner. Admission refusal maps to fixed401, ordinary errors500; results remain exact canonical bounded bytes. The raw alias/method/body/header rules and application ownership remain unchanged.

@@ -8,6 +8,8 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 import unittest
 
+from tests.receiver_values import receiver_context, receiver_declaration
+
 from control_plane_kit_core import (
     ControlPlaneCommandCodec,
     ControlPlaneResultCodec,
@@ -17,7 +19,7 @@ from control_plane_kit_core import (
     ControlPlaneVariableKind,
     ControlPlaneVariableOperationContract,
     MapControlState,
-    NodeControlCommandRequest,
+    ReceiverNodeControlRequest,
     NodeControlEvidence,
     NodeControlEvidenceCode,
     NodeControlFailed,
@@ -27,8 +29,9 @@ from control_plane_kit_core import (
     NodeControlPayload,
     NodeControlReadStateSucceeded,
     NodeControlRejected,
-    NodeControlResultCodec,
-    NodeControlTarget,
+    ReceiverNodeControlResult,
+    ReceiverNodeControlResultCodec,
+    NodeControlReceiverTarget,
     NodeControlTransitionSucceeded,
     ScalarControlState,
 )
@@ -41,11 +44,11 @@ REPLAY_MODULE = "control_plane_kit_server_sdk._replay"
 RETENTION_NS = 300_000_000_000
 
 
-class RequestSubclass(NodeControlCommandRequest):
+class RequestSubclass(ReceiverNodeControlRequest):
     pass
 
 
-class ResultCodecSubclass(NodeControlResultCodec):
+class ResultCodecSubclass(ReceiverNodeControlResultCodec):
     pass
 
 
@@ -89,14 +92,15 @@ def _reference(
     return NodeControlGraphReference(role, value)
 
 
-def _target(*, node: str = "router") -> NodeControlTarget:
-    return NodeControlTarget(
+def _target(*, node: str = "router") -> NodeControlReceiverTarget:
+    return NodeControlReceiverTarget(
+        receiver_id="a" * 32,
         workspace_id=_reference(
             NodeControlGraphReferenceRole.WORKSPACE,
             "workspace-1",
         ),
-        graph_revision=_reference(
-            NodeControlGraphReferenceRole.GRAPH_REVISION,
+        runtime_id=_reference(
+            NodeControlGraphReferenceRole.RUNTIME,
             "revision-7",
         ),
         node_id=_reference(NodeControlGraphReferenceRole.NODE, node),
@@ -137,9 +141,11 @@ def _request(
     node: str = "router",
     variable: str = "routing",
     value: str = "target-b",
-) -> NodeControlCommandRequest:
+) -> ReceiverNodeControlRequest:
     codec = ControlPlaneCommandCodec.REPLACE_SCALAR_V1
-    return NodeControlCommandRequest(
+    return ReceiverNodeControlRequest(
+        authority_context=receiver_context(),
+        declaration_identity=receiver_declaration(variable=variable).identity(),
         target=_target(node=node),
         variable_name=_reference(NodeControlGraphReferenceRole.VARIABLE, variable),
         operation=NodeControlOperation.APPLY_COMMAND,
@@ -154,8 +160,10 @@ def _request(
     )
 
 
-def _read_request(*, key: str = "idempotency-1") -> NodeControlCommandRequest:
-    return NodeControlCommandRequest(
+def _read_request(*, key: str = "idempotency-1") -> ReceiverNodeControlRequest:
+    return ReceiverNodeControlRequest(
+        authority_context=receiver_context(),
+        declaration_identity=receiver_declaration().identity(),
         target=_target(),
         variable_name=_reference(
             NodeControlGraphReferenceRole.VARIABLE,
@@ -167,12 +175,16 @@ def _read_request(*, key: str = "idempotency-1") -> NodeControlCommandRequest:
     )
 
 
-def _success(request: NodeControlCommandRequest) -> NodeControlTransitionSucceeded:
-    return NodeControlTransitionSucceeded(
+def _codec(request):
+    return ReceiverNodeControlResultCodec(request, receiver_declaration(variable=request.variable_name.value))
+
+
+def _success(request: ReceiverNodeControlRequest) -> ReceiverNodeControlResult:
+    return _codec(request).result(NodeControlTransitionSucceeded(
         request_id=request.request_id,
         version=1,
         evidence=NodeControlEvidence(NodeControlEvidenceCode.APPLIED),
-    )
+    ))
 
 
 class ProcessLocalReplayTests(unittest.TestCase):
@@ -187,13 +199,13 @@ class ProcessLocalReplayTests(unittest.TestCase):
     def _coordinator(self, **kwargs):
         return self._module()._ProcessLocalNodeControlReplay(**kwargs)
 
-    def _codec(self) -> NodeControlResultCodec:
-        return NodeControlResultCodec(_descriptor())
+    def _codec(self, request=None) -> ReceiverNodeControlResultCodec:
+        return _codec(_request() if request is None else request)
 
     def _execute(self, coordinator, request, dispatch, *, codec=None):
         return coordinator.execute(
             request,
-            result_codec=self._codec() if codec is None else codec,
+            result_codec=self._codec(request) if codec is None else codec,
             dispatch=dispatch,
         )
 
@@ -205,17 +217,17 @@ class ProcessLocalReplayTests(unittest.TestCase):
         coordinator = self._coordinator()
         for index, result_factory in enumerate((
             _success,
-            lambda request: NodeControlRejected(
+            lambda request: _codec(request).result(NodeControlRejected(
                 request_id=request.request_id,
                 operation=NodeControlOperation.APPLY_COMMAND,
                 evidence=NodeControlEvidence(
                     NodeControlEvidenceCode.PRECONDITION_FAILED
                 ),
-            ),
-            lambda request: NodeControlFailed(
+            )),
+            lambda request: _codec(request).result(NodeControlFailed(
                 request_id=request.request_id,
                 operation=NodeControlOperation.APPLY_COMMAND,
-            ),
+            )),
         )):
             with self.subTest(result_factory=result_factory):
                 request = _request(
@@ -238,7 +250,7 @@ class ProcessLocalReplayTests(unittest.TestCase):
                 self.assertIsNot(first, produced)
                 self.assertIsNot(replayed, first)
                 self.assertEqual(calls, 1)
-                self.assertEqual(self._codec().decode(self._codec().encode(first)), first)
+                self.assertEqual(self._codec(request).decode(self._codec(request).encode(first)), first)
 
     def test_compact_utf8_terminal_profile_and_exact_byte_bound(self) -> None:
         module = self._module()
@@ -265,7 +277,7 @@ class ProcessLocalReplayTests(unittest.TestCase):
         original_encode = codec.encode
 
         def oversize_encode(result):
-            if isinstance(result, NodeControlFailed):
+            if isinstance(result.outcome, NodeControlFailed):
                 return original_encode(result)
             return {"x": "a" * MAX_NODE_CONTROL_PAYLOAD_BYTES}
 
@@ -280,9 +292,11 @@ class ProcessLocalReplayTests(unittest.TestCase):
         first = self._execute(coordinator, request, dispatch, codec=codec)
         replayed = self._execute(coordinator, request, dispatch, codec=codec)
 
-        self.assertIsInstance(first, NodeControlFailed)
+        self.assertIsInstance(first.outcome, NodeControlFailed)
         self.assertEqual(replayed, first)
         self.assertEqual(calls, 1)
+        self.assertEqual(first.request_digest, request.canonical_digest())
+        self.assertLessEqual(len(codec.encode_canonical_bytes(first)), MAX_NODE_CONTROL_PAYLOAD_BYTES)
         self.assertNotIn("aaaa", repr(coordinator))
         self.assertNotIn(request.idempotency_key, repr(coordinator))
 
@@ -324,6 +338,8 @@ class ProcessLocalReplayTests(unittest.TestCase):
         coordinator = self._coordinator()
         request_subclass = RequestSubclass(
             target=request.target,
+            authority_context=request.authority_context,
+            declaration_identity=request.declaration_identity,
             variable_name=request.variable_name,
             operation=request.operation,
             request_id=request.request_id,
@@ -337,7 +353,7 @@ class ProcessLocalReplayTests(unittest.TestCase):
             (SensitiveCandidate(), self._codec(), dispatch),
             (ExplodingReprCandidate(), self._codec(), dispatch),
             (request_subclass, self._codec(), dispatch),
-            (request, ResultCodecSubclass(_descriptor()), dispatch),
+            (request, ResultCodecSubclass(request, receiver_declaration()), dispatch),
             (request, self._codec(), SensitiveCandidate()),
         )
         for candidate, codec, candidate_dispatch in invalid_calls:
@@ -621,7 +637,7 @@ class ProcessLocalReplayTests(unittest.TestCase):
 
                 result = self._execute(coordinator, candidate, counted_dispatch)
                 replayed = self._execute(coordinator, candidate, counted_dispatch)
-                self.assertIsInstance(result, NodeControlFailed)
+                self.assertIsInstance(result.outcome, NodeControlFailed)
                 self.assertEqual(result.request_id, candidate.request_id)
                 self.assertEqual(replayed, result)
                 self.assertEqual(calls, 1)
@@ -644,7 +660,7 @@ class ProcessLocalReplayTests(unittest.TestCase):
             request,
             lambda: self.fail("process-control replay must not redispatch"),
         )
-        self.assertIsInstance(replayed, NodeControlFailed)
+        self.assertIsInstance(replayed.outcome, NodeControlFailed)
 
     def test_same_owner_reentry_fails_without_deadlock(self) -> None:
         module = self._module()
@@ -680,7 +696,7 @@ class ProcessLocalReplayTests(unittest.TestCase):
             return _success(request)
 
         result = self._execute(coordinator, request, dispatch)
-        self.assertIsInstance(result, NodeControlFailed)
+        self.assertIsInstance(result.outcome, NodeControlFailed)
         clock.set(2**63 - 1)
         replayed = self._execute(
             coordinator,
@@ -719,10 +735,10 @@ class ProcessLocalReplayTests(unittest.TestCase):
                 else:
                     with self.assertRaises(ProcessControlSignal):
                         self._execute(coordinator, request, dispatch)
-                    result = NodeControlFailed(
+                    result = _codec(request).result(NodeControlFailed(
                         request_id=request.request_id,
                         operation=NodeControlOperation.APPLY_COMMAND,
-                    )
+                    ))
                 clock.set(2**63 - 1)
                 replayed = self._execute(
                     coordinator,

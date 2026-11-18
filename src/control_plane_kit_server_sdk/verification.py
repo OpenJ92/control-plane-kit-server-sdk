@@ -10,25 +10,33 @@ from typing import Callable
 import jwt
 
 from control_plane_kit_core import (
-    DelegatedWorkloadNodeControlGrant,
-    DelegatedWorkloadNodeControlGrantCodec,
-    DelegatedWorkloadNodeControlSurfaceReadGrant,
-    DelegatedWorkloadNodeControlSurfaceReadGrantCodec,
+    DelegatedWorkloadReceiverNodeControlGrant,
+    DelegatedWorkloadReceiverNodeControlGrantCodec,
+    DelegatedWorkloadReceiverControlSurfaceReadGrant,
+    DelegatedWorkloadReceiverControlSurfaceReadGrantCodec,
+    DelegatedWorkloadReceiverHealthReadGrantCodec,
     DelegationKeyAlgorithm,
     DelegationKeyPurpose,
-    NodeControlCommandRequest,
-    NodeControlCommandRequestCodec,
+    ReceiverNodeControlRequest,
+    ReceiverNodeControlRequestCodec,
     NodeControlGraphReference,
     NodeControlGraphReferenceRole,
     NodeControlOperation,
     NodeControlSurfaceReadKind,
-    NodeControlSurfaceReadRequest,
-    verify_workload_node_control_surface_read_grant,
-    verify_workload_node_control_grant,
+    ReceiverControlSurfaceReadRequest,
+    NodeControlReceiverTarget,
+    NodeHealthReadKind,
+    ReceiverHealthReadRequest,
+    WorkloadNodeControlSurfaceDeclaration,
+    WorkloadNodeControlSurfaceDeclarationProfile,
+    verify_workload_receiver_health_read_grant,
+    verify_workload_receiver_control_surface_read_grant,
+    verify_workload_receiver_node_control_grant,
 )
 from control_plane_kit_server_sdk.verifier_keys import (
     AtomicWorkloadNodeControlSurfaceReadVerifierKeySet,
     AtomicWorkloadNodeControlVerifierKeySet,
+    AtomicWorkloadNodeHealthReadVerifierKeySet,
 )
 
 
@@ -47,6 +55,13 @@ _MAX_SURFACE_CREDENTIAL_BYTES = 4_096
 _MAX_SURFACE_HEADER_SEGMENT_BYTES = 512
 _MAX_SURFACE_PAYLOAD_SEGMENT_BYTES = 3_840
 _MAX_SURFACE_SIGNATURE_SEGMENT_BYTES = 128
+_HEALTH_TOKEN_TYPE = "CPK-WORKLOAD-NODE-HEALTH-READ+JWT"
+_HEALTH_ERROR_MESSAGE = "workload node-health-read credential was rejected"
+# The full maximum canonical health credential is 4,178 bytes, including
+# duplicated outer claims and its Ed25519 signature. These independent framing
+# ceilings also allow bounded JSON whitespace; the embedded Core value is closed.
+_MAX_HEALTH_CREDENTIAL_BYTES = 4_608
+_HEALTH_SEGMENT_BOUNDS = (512, 3_968, 128)
 _MAX_STRUCTURAL_JSON_DEPTH = 16
 _MAX_STRUCTURAL_JSON_MEMBERS = 64
 _MAX_SAFE_INTEGER = 2**53 - 1
@@ -62,7 +77,10 @@ _GRANT_KEYS = frozenset(
         "issuer",
         "key_id",
         "audience",
+        "profile",
         "target",
+        "authority_context",
+        "declaration_identity",
         "variable_name",
         "operation",
         "command_codec",
@@ -76,8 +94,9 @@ _GRANT_KEYS = frozenset(
     }
 )
 _TARGET_KEYS = frozenset(
-    {"workspace_id", "graph_revision", "node_id", "provider_socket_name"}
+    {"workspace_id", "runtime_id", "node_id", "provider_socket_name", "receiver_id"}
 )
+_CONTEXT_KEYS = frozenset({"authored_graph_id", "realized_projection_id"})
 _SURFACE_PAYLOAD_KEYS = frozenset(
     {
         "iss",
@@ -98,6 +117,7 @@ _SURFACE_GRANT_KEYS = frozenset(
         "key_id",
         "audience",
         "target",
+        "authority_context",
         "kind",
         "declaration_identity",
         "request_id",
@@ -125,6 +145,8 @@ _SURFACE_GRANT_TEXT_KEYS = frozenset(
 )
 _GRANT_TEXT_KEYS = frozenset(
     {
+        "profile",
+        "declaration_identity",
         "issuer",
         "key_id",
         "audience",
@@ -136,6 +158,11 @@ _GRANT_TEXT_KEYS = frozenset(
         "jti",
     }
 )
+_HEALTH_PAYLOAD_KEYS = frozenset(
+    {"iss", "aud", "iat", "nbf", "exp", "jti", "workload_node_health_read"}
+)
+_HEALTH_GRANT_KEYS = _SURFACE_GRANT_KEYS
+_HEALTH_GRANT_TEXT_KEYS = _SURFACE_GRANT_TEXT_KEYS
 
 
 class WorkloadNodeControlVerificationError(ValueError):
@@ -152,6 +179,45 @@ class WorkloadNodeControlSurfaceReadVerificationError(ValueError):
 
 class _ObjectPairs(list[tuple[str, object]]):
     pass
+
+
+class WorkloadNodeHealthReadVerificationError(ValueError):
+    """Fixed rejection of a health credential or its receiving local context."""
+
+    __slots__ = ()
+
+
+class _AuthenticatedLocalityError(WorkloadNodeControlVerificationError, WorkloadNodeControlSurfaceReadVerificationError):
+    """Fixed local-scope refusal after authenticated exact request binding."""
+
+    __slots__ = ()
+
+
+def _require_local_configuration(target, declaration) -> None:
+    from control_plane_kit_core import NodeControlReceiverTargetCodec, WorkloadNodeControlSurfaceDeclarationCodec
+    NodeControlReceiverTargetCodec().encode(target)
+    codec = WorkloadNodeControlSurfaceDeclarationCodec()
+    codec.decode(codec.encode(declaration))
+
+
+def _require_admitted(result, grant, request, message) -> None:
+    if result.is_accepted:
+        return
+    if type(request) is ReceiverNodeControlRequest and any(
+        getattr(grant, field) != getattr(request, field)
+        for field in ("variable_name", "operation", "command_codec", "request_id", "idempotency_key")
+    ):
+        raise ValueError
+    # Only a fully bound, authenticated request can earn the existing 403
+    # locality category. Candidate/request disagreement remains credential denial.
+    if (result.code.value in {"workspace-mismatch", "runtime-mismatch", "node-mismatch",
+                             "socket-mismatch", "receiver-mismatch", "declaration-mismatch"}
+            and grant.target == request.target
+            and grant.authority_context == request.authority_context
+            and grant.declaration_identity == request.declaration_identity
+            and grant.request_digest == request.canonical_digest()):
+        raise _AuthenticatedLocalityError(message)
+    raise ValueError
 
 
 class Ed25519WorkloadNodeControlVerifier:
@@ -188,14 +254,20 @@ class Ed25519WorkloadNodeControlVerifier:
         route_operation: NodeControlOperation,
         route_variable: NodeControlGraphReference,
         candidate: bytes | None,
-    ) -> NodeControlCommandRequest:
+        expected_target: NodeControlReceiverTarget,
+        expected_declaration: WorkloadNodeControlSurfaceDeclaration,
+    ) -> ReceiverNodeControlRequest:
         try:
             return self._admit(
                 credential,
                 route_operation=route_operation,
                 route_variable=route_variable,
                 candidate=candidate,
+                expected_target=expected_target,
+                expected_declaration=expected_declaration,
             )
+        except _AuthenticatedLocalityError:
+            raise
         except Exception:
             pass
         raise WorkloadNodeControlVerificationError(_ERROR_MESSAGE)
@@ -207,7 +279,10 @@ class Ed25519WorkloadNodeControlVerifier:
         route_operation: NodeControlOperation,
         route_variable: NodeControlGraphReference,
         candidate: bytes | None,
-    ) -> NodeControlCommandRequest:
+        expected_target: NodeControlReceiverTarget,
+        expected_declaration: WorkloadNodeControlSurfaceDeclaration,
+    ) -> ReceiverNodeControlRequest:
+        _require_local_configuration(expected_target, expected_declaration)
         if type(route_operation) is not NodeControlOperation:
             raise TypeError
         if (
@@ -255,7 +330,7 @@ class Ed25519WorkloadNodeControlVerifier:
         claims = _walk_structural_json(claims)
         _require_payload_profile(claims)
         grant_descriptor = claims["workload_node_control"]
-        grant = DelegatedWorkloadNodeControlGrantCodec().decode(grant_descriptor)
+        grant = DelegatedWorkloadReceiverNodeControlGrantCodec().decode(grant_descriptor)
         _require_outer_grant_congruence(claims, key_id, grant)
 
         now = self._clock()
@@ -272,8 +347,10 @@ class Ed25519WorkloadNodeControlVerifier:
         if grant.operation is NodeControlOperation.READ_STATE:
             if candidate is not None:
                 raise TypeError
-            request = NodeControlCommandRequest(
+            request = ReceiverNodeControlRequest(
                 target=grant.target,
+                authority_context=grant.authority_context,
+                declaration_identity=grant.declaration_identity,
                 variable_name=grant.variable_name,
                 operation=grant.operation,
                 request_id=grant.request_id,
@@ -283,17 +360,21 @@ class Ed25519WorkloadNodeControlVerifier:
             if type(candidate) is not bytes or not 1 <= len(candidate) <= _MAX_CANDIDATE_BYTES:
                 raise TypeError
             descriptor = _decode_structural_json(candidate)
-            request = NodeControlCommandRequestCodec().decode(descriptor)
+            request = ReceiverNodeControlRequestCodec().decode(descriptor)
 
-        result = verify_workload_node_control_grant(
+        result = verify_workload_receiver_node_control_grant(
             grant,
             request,
+            expected_target=expected_target,
+            expected_declaration=expected_declaration,
+            expected_variable_name=route_variable,
+            expected_operation=route_operation,
             expected_issuer=self._expected_issuer,
+            expected_key_id=key_id,
             expected_audience=self._expected_audience,
             now=now,
         )
-        if not result.is_accepted:
-            raise ValueError
+        _require_admitted(result, grant, request, _ERROR_MESSAGE)
         return request
 
 
@@ -330,13 +411,19 @@ class Ed25519WorkloadNodeControlSurfaceReadVerifier:
         *,
         route_kind: NodeControlSurfaceReadKind,
         candidate: None,
-    ) -> NodeControlSurfaceReadRequest:
+        expected_target: NodeControlReceiverTarget,
+        expected_declaration: WorkloadNodeControlSurfaceDeclaration,
+    ) -> ReceiverControlSurfaceReadRequest:
         try:
             return self._admit(
                 credential,
                 route_kind=route_kind,
                 candidate=candidate,
+                expected_target=expected_target,
+                expected_declaration=expected_declaration,
             )
+        except _AuthenticatedLocalityError:
+            raise
         except Exception:
             pass
         raise WorkloadNodeControlSurfaceReadVerificationError(
@@ -349,7 +436,10 @@ class Ed25519WorkloadNodeControlSurfaceReadVerifier:
         *,
         route_kind: NodeControlSurfaceReadKind,
         candidate: None,
-    ) -> NodeControlSurfaceReadRequest:
+        expected_target: NodeControlReceiverTarget,
+        expected_declaration: WorkloadNodeControlSurfaceDeclaration,
+    ) -> ReceiverControlSurfaceReadRequest:
+        _require_local_configuration(expected_target, expected_declaration)
         if (
             type(route_kind) is not NodeControlSurfaceReadKind
             or candidate is not None
@@ -399,7 +489,7 @@ class Ed25519WorkloadNodeControlSurfaceReadVerifier:
         claims = _walk_structural_json(claims)
         _require_surface_payload_profile(claims)
         grant_descriptor = claims["workload_node_control_surface_read"]
-        grant = DelegatedWorkloadNodeControlSurfaceReadGrantCodec().decode(
+        grant = DelegatedWorkloadReceiverControlSurfaceReadGrantCodec().decode(
             grant_descriptor
         )
         _require_surface_outer_grant_congruence(claims, key_id, grant)
@@ -407,21 +497,139 @@ class Ed25519WorkloadNodeControlSurfaceReadVerifier:
         now = self._clock()
         if type(now) is not int or not 0 <= now <= _MAX_SAFE_INTEGER:
             raise ValueError
-        request = NodeControlSurfaceReadRequest(
+        request = ReceiverControlSurfaceReadRequest(
             target=grant.target,
+            authority_context=grant.authority_context,
             kind=grant.kind,
             declaration_identity=grant.declaration_identity,
             request_id=grant.request_id,
         )
         if grant.kind is not route_kind:
             raise ValueError
-        result = verify_workload_node_control_surface_read_grant(
+        result = verify_workload_receiver_control_surface_read_grant(
             grant,
             request,
+            expected_target=expected_target,
+            expected_declaration=expected_declaration,
+            expected_kind=route_kind,
             expected_issuer=self._expected_issuer,
             expected_key_id=key_id,
             expected_audience=self._expected_audience,
             now=now,
+        )
+        _require_admitted(result, grant, request, _SURFACE_ERROR_MESSAGE)
+        return request
+
+
+class Ed25519WorkloadNodeHealthReadVerifier:
+    """Authenticate a health read against independently supplied local context."""
+
+    __slots__ = ("_holder", "_expected_issuer", "_expected_audience", "_clock")
+
+    def __init__(
+        self,
+        holder: AtomicWorkloadNodeHealthReadVerifierKeySet,
+        *,
+        expected_issuer: str,
+        expected_audience: str,
+        clock: Callable[[], int],
+    ) -> None:
+        if type(holder) is not AtomicWorkloadNodeHealthReadVerifierKeySet:
+            raise TypeError("health-read verifier holder is invalid")
+        _require_reference(expected_issuer)
+        _require_reference(expected_audience)
+        if not callable(clock):
+            raise TypeError("health-read verifier clock is invalid")
+        self._holder = holder
+        self._expected_issuer = expected_issuer
+        self._expected_audience = expected_audience
+        self._clock = clock
+
+    def __repr__(self) -> str:
+        return "Ed25519WorkloadNodeHealthReadVerifier()"
+
+    def admit(
+        self, credential: bytes, *, route_kind: NodeHealthReadKind,
+        candidate: None, expected_target: NodeControlReceiverTarget,
+        expected_declaration: WorkloadNodeControlSurfaceDeclaration,
+    ) -> ReceiverHealthReadRequest:
+        try:
+            return self._admit(
+                credential, route_kind=route_kind, candidate=candidate,
+                expected_target=expected_target,
+                expected_declaration=expected_declaration,
+            )
+        except Exception:
+            pass
+        raise WorkloadNodeHealthReadVerificationError(_HEALTH_ERROR_MESSAGE)
+
+    def _admit(
+        self, credential: bytes, *, route_kind: NodeHealthReadKind,
+        candidate: None, expected_target: NodeControlReceiverTarget,
+        expected_declaration: WorkloadNodeControlSurfaceDeclaration,
+    ) -> ReceiverHealthReadRequest:
+        if (
+            type(route_kind) is not NodeHealthReadKind or candidate is not None
+            or type(expected_target) is not NodeControlReceiverTarget
+            or type(expected_declaration) is not WorkloadNodeControlSurfaceDeclaration
+            or expected_declaration.profile is not WorkloadNodeControlSurfaceDeclarationProfile.V2
+        ):
+            raise TypeError
+        header_bytes, payload_bytes, _signature_bytes = _decode_read_compact(
+            credential, _MAX_HEALTH_CREDENTIAL_BYTES, _HEALTH_SEGMENT_BOUNDS,
+        )
+        header = _decode_structural_json(header_bytes)
+        payload = _decode_structural_json(payload_bytes)
+        if (
+            type(header) is not dict or frozenset(header) != _HEADER_KEYS
+            or any(type(header[key]) is not str for key in _HEADER_KEYS)
+            or header["alg"] != "EdDSA" or header["typ"] != _HEALTH_TOKEN_TYPE
+        ):
+            raise ValueError
+        _require_health_payload_profile(payload)
+        key_id = header["kid"]
+        snapshot = self._holder.snapshot()
+        if snapshot.purpose is not DelegationKeyPurpose.WORKLOAD_NODE_HEALTH_READ:
+            raise ValueError
+        selected = tuple(key for key in snapshot.public_keys if key.key_id == key_id)
+        if len(selected) != 1 or selected[0].algorithm is not DelegationKeyAlgorithm.ED25519:
+            raise ValueError
+
+        del header, payload, header_bytes, payload_bytes
+        claims = jwt.decode(
+            credential, selected[0].public_key_pem, algorithms=["EdDSA"],
+            issuer=self._expected_issuer, audience=self._expected_audience,
+            options={
+                "require": ["iss", "aud", "iat", "nbf", "exp", "jti"],
+                "verify_exp": False, "verify_nbf": False, "verify_iat": False,
+                "strict_aud": True,
+            },
+        )
+        claims = _walk_structural_json(claims)
+        _require_health_payload_profile(claims)
+        grant = DelegatedWorkloadReceiverHealthReadGrantCodec().decode(
+            claims["workload_node_health_read"]
+        )
+        if (
+            key_id != grant.key_id or claims["iss"] != grant.issuer
+            or claims["aud"] != grant.audience or claims["iat"] != grant.issued_at
+            or claims["nbf"] != grant.not_before or claims["exp"] != grant.expires_at
+            or claims["jti"] != grant.jti
+        ):
+            raise ValueError
+        now = self._clock()
+        if type(now) is not int or not 0 <= now <= _MAX_SAFE_INTEGER:
+            raise ValueError
+        request = ReceiverHealthReadRequest(
+            target=grant.target, authority_context=grant.authority_context, kind=grant.kind,
+            declaration_identity=grant.declaration_identity, request_id=grant.request_id,
+        )
+        # The authenticated candidate is not the receiving application's authority.
+        result = verify_workload_receiver_health_read_grant(
+            grant, request, expected_target=expected_target,
+            expected_declaration=expected_declaration, expected_kind=route_kind,
+            expected_issuer=self._expected_issuer, expected_key_id=key_id,
+            expected_audience=self._expected_audience, now=now,
         )
         if not result.is_accepted:
             raise ValueError
@@ -464,20 +672,25 @@ def _decode_compact(credential: object) -> tuple[bytes, bytes, bytes]:
 
 
 def _decode_surface_compact(credential: object) -> tuple[bytes, bytes, bytes]:
+    return _decode_read_compact(
+        credential, _MAX_SURFACE_CREDENTIAL_BYTES,
+        (_MAX_SURFACE_HEADER_SEGMENT_BYTES, _MAX_SURFACE_PAYLOAD_SEGMENT_BYTES,
+         _MAX_SURFACE_SIGNATURE_SEGMENT_BYTES),
+    )
+
+
+def _decode_read_compact(
+    credential: object, maximum: int, bounds: tuple[int, int, int],
+) -> tuple[bytes, bytes, bytes]:
     if (
         type(credential) is not bytes
-        or not 1 <= len(credential) <= _MAX_SURFACE_CREDENTIAL_BYTES
+        or not 1 <= len(credential) <= maximum
     ):
         raise TypeError
     credential.decode("ascii")
     segments = credential.split(b".")
     if len(segments) != 3:
         raise ValueError
-    bounds = (
-        _MAX_SURFACE_HEADER_SEGMENT_BYTES,
-        _MAX_SURFACE_PAYLOAD_SEGMENT_BYTES,
-        _MAX_SURFACE_SIGNATURE_SEGMENT_BYTES,
-    )
     decoded: list[bytes] = []
     for segment, maximum in zip(segments, bounds, strict=True):
         if not 1 <= len(segment) <= maximum or _BASE64URL.fullmatch(segment) is None:
@@ -579,6 +792,9 @@ def _require_payload_profile(value: object) -> None:
         raise ValueError
     if any(type(target[key]) is not str for key in _TARGET_KEYS):
         raise TypeError
+    _require_context_profile(grant)
+    if grant["profile"] != "workload-node-control-grant.v2":
+        raise ValueError
 
 
 def _require_surface_payload_profile(value: object) -> None:
@@ -603,12 +819,47 @@ def _require_surface_payload_profile(value: object) -> None:
         raise ValueError
     if any(type(target[key]) is not str for key in _TARGET_KEYS):
         raise TypeError
+    _require_context_profile(grant)
+    if grant["profile"] != "workload-node-control-surface-read-grant.v2":
+        raise ValueError
+
+
+def _require_health_payload_profile(value: object) -> None:
+    if type(value) is not dict or frozenset(value) != _HEALTH_PAYLOAD_KEYS:
+        raise ValueError
+    if any(type(value[key]) is not str for key in ("iss", "aud", "jti")):
+        raise TypeError
+    if any(type(value[key]) is not int for key in ("iat", "nbf", "exp")):
+        raise TypeError
+    grant = value["workload_node_health_read"]
+    if type(grant) is not dict or frozenset(grant) != _HEALTH_GRANT_KEYS:
+        raise ValueError
+    if any(type(grant[key]) is not str for key in _HEALTH_GRANT_TEXT_KEYS):
+        raise TypeError
+    if any(type(grant[key]) is not int for key in ("issued_at", "not_before", "expires_at")):
+        raise TypeError
+    target = grant["target"]
+    if (
+        type(target) is not dict or frozenset(target) != _TARGET_KEYS
+        or any(type(target[key]) is not str for key in _TARGET_KEYS)
+    ):
+        raise TypeError
+    _require_context_profile(grant)
+    if grant["profile"] != "workload-node-health-read-grant.v2":
+        raise ValueError
+
+
+def _require_context_profile(grant: dict) -> None:
+    context = grant["authority_context"]
+    if (type(context) is not dict or frozenset(context) != _CONTEXT_KEYS
+            or any(type(context[key]) is not str for key in _CONTEXT_KEYS)):
+        raise TypeError
 
 
 def _require_outer_grant_congruence(
     claims: dict[str, object],
     header_key_id: str,
-    grant: DelegatedWorkloadNodeControlGrant,
+    grant: DelegatedWorkloadReceiverNodeControlGrant,
 ) -> None:
     if (
         type(header_key_id) is not str
@@ -626,7 +877,7 @@ def _require_outer_grant_congruence(
 def _require_surface_outer_grant_congruence(
     claims: dict[str, object],
     header_key_id: str,
-    grant: DelegatedWorkloadNodeControlSurfaceReadGrant,
+    grant: DelegatedWorkloadReceiverControlSurfaceReadGrant,
 ) -> None:
     if (
         type(header_key_id) is not str
@@ -644,6 +895,8 @@ def _require_surface_outer_grant_congruence(
 __all__ = [
     "Ed25519WorkloadNodeControlSurfaceReadVerifier",
     "Ed25519WorkloadNodeControlVerifier",
+    "Ed25519WorkloadNodeHealthReadVerifier",
     "WorkloadNodeControlSurfaceReadVerificationError",
     "WorkloadNodeControlVerificationError",
+    "WorkloadNodeHealthReadVerificationError",
 ]

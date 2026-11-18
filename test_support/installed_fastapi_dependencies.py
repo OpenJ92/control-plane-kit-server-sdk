@@ -40,7 +40,7 @@ def main() -> int:
         import control_plane_kit_server_sdk.fastapi as sdk_fastapi
     except Exception:
         return _reject()
-    if sdk_fastapi.__all__ != ["install_cpk_control_routes"]:
+    if sdk_fastapi.__all__ != ["install_cpk_control_routes", "install_cpk_wrapper"]:
         return _reject()
 
     print("fastapi dependencies import ok")

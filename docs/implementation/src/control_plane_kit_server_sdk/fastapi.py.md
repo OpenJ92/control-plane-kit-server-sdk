@@ -1,0 +1,44 @@
+Source: [src/control_plane_kit_server_sdk/fastapi.py](../../../../src/control_plane_kit_server_sdk/fastapi.py).
+Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
+
+The optional public installer remains the one atomic publication boundary. It validates exact app/router/target/declaration/verifier types and startup timing, then classifies declared variable and health contents. Variables require the four existing routes and command/static verifiers, including variable-only V1 declarations. Health-only V2 requires static authority plus an exact health dispatcher, rejects command verifier/nonempty variables, and constructs no command replay. Mixed V2 retains existing variable behavior/replay plus health. V2 dispatcher target/declaration must equal the install context.
+
+Configuration and closed collision checks precede variable descriptor callbacks. Registry snapshots, optional route-family construction, exact ordered Core route shape and private marking complete off-app before the sole route-list replacement. Existing route object identities, partial variable-registry laws, startup constraints, marks and collision classifier are preserved. This is serialized startup composition, not a transaction against arbitrary concurrent host edits.
+
+Static routes remain separately authenticated registry/declaration projections, not health. The private health adapter performs framing and uses the neutral dispatcher off-loop. No second FastAPI installer, global registry, actual listener or ordinary-routing rewrite is added. Core is 1f28d009; exact direct framework versions are unchanged. Completed SDK21 adds the separate passive [stdlib installer](stdlib.py.md), reusing shared interpretation. Tests cover the additive signature and concrete legacy/health-only/mixed behavior; companion integration retains this source truth.
+
+SDK #26 extracts pure configuration validation and preparation to `_control_dispatch`. Host checks/collisions precede descriptor preparation; static routes capture that value, variable routes consume its exact registry/replay, and health uses its retained dispatcher. Public signature, shape, errors and publication are unchanged.
+
+## Behavior and evidence details
+
+The collision classifier accepts only exact known FastAPI/Starlette HTTP,
+WebSocket and Mount types with a disjoint literal first segment. A root ordinary
+route is allowed, while a root mount, parameterized first segment, __control
+prefix segment, Host, subclass or unknown route type fails closed. This logic
+depends on the explicitly selected framework versions; names alone are not an
+ownership proof. Any retained marked route prevents another install. Removing
+all marked routes permits a fresh install only if the other preconditions and
+collision checks still pass; it also creates fresh process-local replay state.
+
+Routes are excluded from OpenAPI, not made unreachable. Signed admission lives
+in [verification](verification.py.md); synchronous interpretation and trusted
+target binding use [shared dispatch](_control_dispatch.py.md), with
+[health dispatch](health.py.md) owning health admission and callback dispatch.
+The [variable](_fastapi_variable_routes.py.md) and
+[surface](_fastapi_surface_routes.py.md) adapters own HTTP framing, off-loop
+execution and response mapping. The installer adds no listener,
+TLS, persistence, provider client or workload transaction. Ordinary preparation
+failures become one of three fixed cause-free messages; BaseExceptions and
+external caller effects are not a rollback guarantee. See
+[installer tests](../../tests/test_fastapi_control_routes.py.md) and
+[decision 0014](../../../../docs/decisions/0014-atomic-fastapi-control-route-installation.md).
+
+SDK38 adds `install_cpk_wrapper` as an ergonomic composition helper around the same installer, selecting the shared configuration (now receiver V2 under SDK43) via the optional neutral wrapper module. It prepares authority and lifecycle before route publication, captures the original lifespan, and replaces lifespan only after route installation succeeds. The async context manager invokes original startup/shutdown once, preserves yielded state and exceptions, marks serving after successful startup, and clears readiness before original shutdown (also on startup failure). No additional route interpreter or listener is introduced. Existing low-level installation retains caller-owned callbacks/lifecycle. Configuration and collision failures leave routes and lifespan unchanged; startup composition remains serialized, not concurrent mutation support.
+
+SDK #43 threads the exact receiver target and installed declaration to variable
+admission/result construction. An empty declaration uses only surface routes;
+a declaration's profile alone does not require command authority. App collision,
+publication and lifespan algorithms are unchanged. Historical live target and
+configuration types refuse setup.
+
+SDK #78 adds an opt-in sample receiver to the existing atomic installer and an explicit http_verification_binding to install_cpk_wrapper. Shared validation requires exact host target/declaration equality; route construction appends only Core’s fixed sample route. One publication and existing collision/lifespan behavior remain. The sample route performs blocking work off-loop. Unopted installations preserve their prior route set.
