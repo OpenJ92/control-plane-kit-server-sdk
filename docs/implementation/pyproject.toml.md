@@ -1,7 +1,7 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-SDK #80 selects Core `8d3969f239569aa10582337838edc10ed2f57393` so the SDK and connector interpreter can install together. The SDK continues to expose the same verification and FastAPI extras. The dependency preflight and installed-package tests require this exact revision.
+SDK #82 selects Core `68f187710abe8fa89701f403ac76e904b3fec35d` for the private Hello CPK product and its downstream packages. The SDK continues to expose the same verification and FastAPI extras. The dependency preflight and installed-package tests require this exact revision.
 
 Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
