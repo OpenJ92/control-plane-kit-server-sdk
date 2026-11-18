@@ -1,8 +1,7 @@
 Source: [pyproject.toml](../../pyproject.toml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
-SDK #78 selects accepted Core #2087 merge
-`976901c609d950a557ec1e9966f018e8ff6e16aa`, matching the exact dependency-preflight guard. Relative to SDK’s earlier Core7afef43f, the consumed additions are the pure HTTP sample request/grant/result, installed companion binding, dedicated purposes and fixed route. Existing receiver V2/health/control contracts remain unchanged. The archive also carries accepted Operations and control-plane additions outside the installed Core owner; those do not imply SDK adoption of Operations. This source pin enables the optional receiver described in its companion, not product/installation adoption. Downstream pins remain held.
+SDK #80 selects Core `8d3969f239569aa10582337838edc10ed2f57393` so the SDK and connector interpreter can install together. The SDK continues to expose the same verification and FastAPI extras. The dependency preflight and installed-package tests require this exact revision.
 
 Verification still pins
 PyJWT2.13.0/cryptography50.0.0; FastAPI adds
