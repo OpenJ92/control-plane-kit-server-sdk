@@ -2,7 +2,7 @@ Source: [tests.yml](../../../../.github/workflows/tests.yml).
 Maintain this document alongside its source file. When the source or relevant imported contracts change, verify and update this companion in the same change.
 
 The workflow runs the single authoritative [package gate](../../test.sh.md) for
-pushes to main/develop, pull requests and manual dispatch. Its Ubuntu job has a
+pushes to main, pull requests and manual dispatch. Its Ubuntu job has a
 30-minute timeout. Workflow/ref concurrency cancels an earlier run for that
 group. The job checks out source with actions/checkout@v4 and invokes ./test.sh
 without selecting local-core mode, preserving default pinned-dependency evidence.

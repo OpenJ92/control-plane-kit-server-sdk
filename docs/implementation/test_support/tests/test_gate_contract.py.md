@@ -13,6 +13,8 @@ This suite mixes source-shape checks with small controlled subprocess fixtures.
 Text assertions preserve repository-root anchoring, closed dependency modes,
 preflight/build/install ordering, three fail-fast container scripts, PID-derived
 cleanup targets, Dockerfile stages/context rules and one read-only CI gate.
+The workflow test checks for main, pull requests and manual dispatch and rejects
+the retired develop push target.
 A Bash subprocess exercises empty and space-containing optional mount arrays;
 it runs the selected /bin/bash, not every shell version.
 

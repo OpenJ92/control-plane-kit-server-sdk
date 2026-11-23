@@ -1,16 +1,15 @@
 Source: [README.md](../../README.md).
 Maintain this companion alongside its source.
 
-The installation example names the immutable Core archive selected by
-pyproject.toml and the exact dependency-preflight guard. SDK #66 / Interpreters #214's
-bounded alignment selects accepted Core `95566689`;
-public SDK setup, framework extras, runtime
-behavior and publication status remain unchanged. Existing foundation tests
+The README links ADR 0010 at the same immutable Core revision used for the
+installation example and the archive dependency in pyproject.toml. At Core
+`68f187710abe8fa89701f403ac76e904b3fec35d`, that ADR defines the node-control
+route prefix and the separate workload-facing SDK. Existing foundation tests
 check the documented coordinate. Documentation alone does not prove a clean
 installation; the ordinary pinned Docker gate owns that evidence.
 
-This checkpoint provides the SDK coordinate for the next Secrets alignment;
-it does not complete Interpreters #214 or adopt a new provider/live capability.
+The earlier SDK #66 checkpoint supplied Core `95566689` for the subsequent
+Secrets alignment tracked by Interpreters #214.
 
 SDK #43 updates the live examples to receiver target/configuration and the
 mandatory independent declaration/target verifier arguments. It documents the
