@@ -55,15 +55,18 @@ class RepositoryPolicyTests(unittest.TestCase):
                 self.assertIn(required, policy)
 
     def test_git_flow_records_exact_branch_and_merge_topology(self) -> None:
-        git_flow = self._read("GIT-FLOW.md")
+        for guide in ("AGENTS.md", "GIT-FLOW.md"):
+            with self.subTest(guide=guide):
+                flow = " ".join(self._read(guide).split())
+                self.assertIn("codex/<issue-id>-<slug>", flow)
+                self.assertIn("`origin/main`", flow)
+                self.assertIn("pull request into `main`", flow)
+                self.assertNotIn("`develop`", flow)
 
-        self.assertIn("main", git_flow)
-        self.assertIn("develop", git_flow)
-        self.assertIn("codex/<issue-id>-<slug>", git_flow)
-        self.assertIn("pull request", git_flow.lower())
-        self.assertIn("exact-head", git_flow)
-        self.assertIn("checks", git_flow)
-        self.assertIn("review", git_flow)
+        git_flow = self._read("GIT-FLOW.md")
+        for required in ("exact-head", "checks", "review", "security", "handoff"):
+            with self.subTest(required=required):
+                self.assertIn(required, git_flow)
 
     def test_policy_decision_and_ignore_contract_are_present(self) -> None:
         decision = self._read("docs/decisions/0002-repository-policy.md")

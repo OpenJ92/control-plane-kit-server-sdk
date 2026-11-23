@@ -3,12 +3,15 @@ Maintain this document alongside its source file. When the source or relevant im
 
 This suite checks that repository prose carries the accepted ownership,
 ControlPlaneVariable vocabulary, issue/test/security loop, Docker gate, durable
-handoff and branch/review requirements. It rejects an obsolete generic parameter
+handoff and branch/review requirements. Both guides identify the temporary issue
+branch, the accepted main base and the main pull request destination. The flow
+guide also covers exact-head checks, review, security and handoff.
+The suite rejects an obsolete generic parameter
 spelling and requires the six Python hygiene patterns in .gitignore. All checks
 read repository files; they do not enforce GitHub branch protections or execute
 the policies they describe.
 
-The assertions are mostly substring presence, with one obsolete-string absence
+The assertions are mostly substring presence, with obsolete-string checks
 and an ignore-pattern subset. They can catch accidental removal of the named
 guidance but cannot resolve contradictions or prove that a PR followed it.
 Historical replay-issue and genesis references remain tested text; consult the

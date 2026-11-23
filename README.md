@@ -4,7 +4,7 @@ Framework-neutral workload node-control SDK for Control Plane Kit.
 
 This repository is the separately installable workload-facing SDK boundary
 defined by
-[control-plane-kit ADR 0010](https://github.com/OpenJ92/control-plane-kit/blob/develop/docs/adr/0010-node-control-route-prefix-and-server-sdk.md).
+[control-plane-kit ADR 0010](https://github.com/OpenJ92/control-plane-kit/blob/68f187710abe8fa89701f403ac76e904b3fec35d/docs/adr/0010-node-control-route-prefix-and-server-sdk.md).
 It consumes the pure node-control contracts published by
 `control-plane-kit-core`; core will never import this repository.
 

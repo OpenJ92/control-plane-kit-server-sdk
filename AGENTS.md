@@ -85,19 +85,9 @@ state and transactions.
 
 ## Branch Flow
 
-Inherit only the branch topology in `GIT-FLOW.md`:
-
-```text
-main
-  develop
-    codex/<issue-id>-<slug>
-```
-
-Issue branches target `develop`. Promote `develop` to `main` only when a
-coherent reviewed vertical is ready.
-
-The canonical proportional-evidence contract in this guide supersedes the
-legacy mandatory-red process in `GIT-FLOW.md`.
+Start a temporary `codex/<issue-id>-<slug>` branch from the accepted
+`origin/main` commit and open a pull request into `main`. Follow
+[GIT-FLOW.md](GIT-FLOW.md) for exact-head validation, review and merge.
 
 ## Recursive Issue Loop
 

@@ -2,6 +2,12 @@
 
 Status: Accepted for repository policy.
 
+The original decision below records the repository's founding policy.
+[CPK #2119](https://github.com/OpenJ92/control-plane-kit/issues/2119) supersedes
+its branch topology. [GIT-FLOW.md](../../GIT-FLOW.md) defines the current
+main-target flow, and [AGENTS.md](../../AGENTS.md) defines when a change needs
+focused target-red evidence.
+
 ## Decision
 
 The SDK follows a tests-before-source, issue-scoped development loop over

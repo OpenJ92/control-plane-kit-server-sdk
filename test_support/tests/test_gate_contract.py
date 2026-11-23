@@ -484,7 +484,6 @@ class PackageGateContractTests(unittest.TestCase):
             "pull_request:",
             "workflow_dispatch:",
             "- main",
-            "- develop",
             "contents: read",
             "timeout-minutes: 30",
             "cancel-in-progress: true",
@@ -494,6 +493,7 @@ class PackageGateContractTests(unittest.TestCase):
                 self.assertIn(expected, source)
         self.assertEqual(source.count("run: ./test.sh"), 1)
         for forbidden in (
+            "- develop",
             "packages: write",
             "id-token: write",
             "docker/login-action",
